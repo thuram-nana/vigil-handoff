@@ -1,0 +1,2072 @@
+{
+ "generated": "2026-11-24",
+ "private": true,
+ "source": "read-only audit; companion to /home/kali/.claude/plans/MASTER-COMPLETION-PLAN.md",
+ "reference_heads": {
+  "vigil_origin_main": "d805c779 (PR #1215)",
+  "pentest_main": "85986a1",
+  "sigil_main": "19d33d8"
+ },
+ "timing_note": "CORRECTED 2026-11-24 ~19:30: the weekly subagent limit hit at 16:00 lifted around 18:30 (probe agent OK). Reviews of PR-H, #1217, #1218, #1219 are RUNNING NOW in wf_39a93661-58b; nothing waits for Nov 29 any more.",
+ "counts": {
+  "unfinished": 59,
+  "by_project": {
+   "VIGIL": 34,
+   "AEGIS": 3,
+   "CRUCIBLE": 13,
+   "SIGIL": 2,
+   "VIGIL-APEX": 4,
+   "OTHER": 3
+  },
+  "by_status": {
+   "IN_PROGRESS_NOW": 11,
+   "OPEN_PR": 4,
+   "HALF_DONE": 31,
+   "PLANNED_NOT_STARTED": 13
+  },
+  "abandoned_or_unknown": 27
+ },
+ "items": [
+  {
+   "id": "V01",
+   "project": "VIGIL",
+   "name": "PR-H #1190 SSO/SCIM",
+   "what": "Company-login sign-in and automatic staff add/remove for business customers; off by default.",
+   "status": "IN_PROGRESS_NOW",
+   "where": [
+    "branch claude/consumer-prH-sso (PR #1190 OPEN)",
+    "/home/kali/vigil-wt-ci-1190-groupfix @e4f75129 (newest tip, 50 ahead)",
+    "/home/kali/vigil-wt-prH-sso @38ef19d0 (behind remote)",
+    "/home/kali/vigil-wt-ci-1190 @306ea39f (older base)",
+    "~/.cache/vigil-tmp/rvH7/wt and ~/.cache/vigil-tmp/rvh7-mut/wt",
+    "workflow wf_39a93661-58b"
+   ],
+   "progress": "Review rounds 1-6 blocked, each narrower; round 7 fixed all 22 gaps; round-7 review running.",
+   "remaining": "Clean independent review, CI, merge. Do not commit reviewer probe test copies.",
+   "depends_on": "Must merge before the six queued fixes resume.",
+   "owner_input": "None (no-split already decided).",
+   "owner_first": false,
+   "wave": 1
+  },
+  {
+   "id": "V02",
+   "project": "VIGIL",
+   "name": "PR #1217 launch pricing",
+   "what": "Credit packs and monthly plans in the catalog.",
+   "status": "IN_PROGRESS_NOW",
+   "where": [
+    "claude/launch-pricing-catalog @898a6096",
+    "/home/kali/vigil-wt-launch-pricing",
+    "~/.cache/vigil-tmp/rp-launch-pricing/mut"
+   ],
+   "progress": "Built to owner prices of 2026-11-24.",
+   "remaining": "Independent review after Nov 29, merge.",
+   "depends_on": "Live checkout flag stays off until payment drain proven.",
+   "owner_input": "Set private margin setting on deploy day.",
+   "owner_first": false,
+   "wave": 1
+  },
+  {
+   "id": "V03",
+   "project": "VIGIL",
+   "name": "PR #1218 terms for individuals",
+   "what": "Terms open to individuals, EU 14-day withdrawal, required terms acceptance at Stripe checkout.",
+   "status": "IN_PROGRESS_NOW",
+   "where": [
+    "claude/terms-individuals @e8603413",
+    "/home/kali/vigil-wt-terms-individuals",
+    "~/.cache/vigil-tmp/rev1218/base",
+    "~/.cache/vigil-tmp/rev1218/mut"
+   ],
+   "progress": "Counsel approved wording.",
+   "remaining": "Independent review after Nov 29, merge.",
+   "depends_on": "Merge before #1219.",
+   "owner_input": "Add Terms URL in Stripe public details.",
+   "owner_first": false,
+   "wave": 1
+  },
+  {
+   "id": "V04",
+   "project": "VIGIL",
+   "name": "PR #1219 support page",
+   "what": "Hosted-service support page with a 2-business-day reply target.",
+   "status": "IN_PROGRESS_NOW",
+   "where": [
+    "claude/support-page-hosted @c20ad587",
+    "/home/kali/vigil-wt-support-page"
+   ],
+   "progress": "Built; up to date with main.",
+   "remaining": "Review after Nov 29; merge after #1218.",
+   "depends_on": "V03",
+   "owner_input": "None.",
+   "owner_first": false,
+   "wave": 1
+  },
+  {
+   "id": "V05",
+   "project": "VIGIL",
+   "name": "Dependabot PRs #1205-#1214",
+   "what": "Ten routine dependency updates.",
+   "status": "OPEN_PR",
+   "where": [
+    "GitHub vigil-sovereign PRs #1205-#1214"
+   ],
+   "progress": "Auto-generated, not reviewed.",
+   "remaining": "Check CI, merge one at a time; watch the supply-chain gate.",
+   "depends_on": "",
+   "owner_input": "None.",
+   "owner_first": false,
+   "wave": 1
+  },
+  {
+   "id": "V06",
+   "project": "VIGIL",
+   "name": "Consumer D fix-forward",
+   "what": "Notification hardening: only proven findings open tickets; ledger made safe.",
+   "status": "HALF_DONE",
+   "where": [
+    "claude/consumer-prD-fixfwd @e43cf756",
+    "/home/kali/vigil-wt-prD-fixfwd (19 ahead, no PR)"
+   ],
+   "progress": "Built; independent review never ran.",
+   "remaining": "Review, fix, PR, merge; keep withdrawn figure withdrawn unless re-measured.",
+   "depends_on": "After V01.",
+   "owner_input": "None.",
+   "owner_first": false,
+   "wave": 2
+  },
+  {
+   "id": "V07",
+   "project": "VIGIL",
+   "name": "Consumer E re-test on every deploy",
+   "what": "Re-checks findings on each customer deploy; last consumer area unmerged.",
+   "status": "HALF_DONE",
+   "where": [
+    "claude/consumer-prE-ciretest @e093e163",
+    "/home/kali/vigil-wt-prE-ciretest (2 ahead, no PR)",
+    "objections r3-objections-E.json"
+   ],
+   "progress": "Built; review blocked (stale result can override newer one, false FIXED).",
+   "remaining": "Fix round, review, PR, merge.",
+   "depends_on": "After V01.",
+   "owner_input": "None.",
+   "owner_first": false,
+   "wave": 2
+  },
+  {
+   "id": "V08",
+   "project": "VIGIL",
+   "name": "Slug-lease race fix",
+   "what": "Fixes two processes both winning the same lock.",
+   "status": "HALF_DONE",
+   "where": [
+    "claude/fix-slug-lease-race @3b6aef28",
+    "/home/kali/vigil-wt-fix-slug-lease (3 ahead, no PR)",
+    "objections r3-objections-lease.json"
+   ],
+   "progress": "Built and tested; review objections not yet fixed.",
+   "remaining": "Fix round, review, PR, merge; rebase on main.",
+   "depends_on": "After V01.",
+   "owner_input": "None.",
+   "owner_first": false,
+   "wave": 2
+  },
+  {
+   "id": "V09",
+   "project": "VIGIL",
+   "name": "Legal-gov S1 settings shell",
+   "what": "Customer Settings area; base for the other legal slices.",
+   "status": "HALF_DONE",
+   "where": [
+    "claude/legalgov-s1-settings-shell @689e0a62",
+    "/home/kali/vigil-wt-legalgov-s1 (3 ahead, no PR)",
+    "objections r3-objections-lgS1.json"
+   ],
+   "progress": "Tests pass; 3 medium data-loss bugs found in review.",
+   "remaining": "Fix the 3 bugs, review, PR, merge.",
+   "depends_on": "After V01; unblocks V15-V21.",
+   "owner_input": "Policy text from owner/counsel (pages fail closed until then).",
+   "owner_first": false,
+   "wave": 2
+  },
+  {
+   "id": "V10",
+   "project": "VIGIL",
+   "name": "Investigation graph S1 + S3 fixes",
+   "what": "S1 safe evidence lookup by ID; S3 charter goals as graph nodes (off by default).",
+   "status": "IN_PROGRESS_NOW",
+   "where": [
+    "claude/invgraph-s1-evidence-resolver @0bc1b2ea (11 ahead)",
+    "claude/invgraph-s3-objectives @19263e80 (3 ahead)",
+    "/home/kali/vigil-wt-invgraph-s1-resolver",
+    "/home/kali/vigil-wt-invgraph-s3-objectives",
+    "workflow wf_613eabec-e63",
+    "plan ~/.claude/plans/investigation-graph-gap-matrix.json (private)"
+   ],
+   "progress": "Earlier review blocked both; fix rounds running.",
+   "remaining": "Pass review, PR, merge.",
+   "depends_on": "",
+   "owner_input": "None.",
+   "owner_first": false,
+   "wave": 2
+  },
+  {
+   "id": "V11",
+   "project": "VIGIL",
+   "name": "Investigation graph S2, S4, S5",
+   "what": "S2 backed-evidence join; S4 fix/retest steps; S5 coverage view.",
+   "status": "IN_PROGRESS_NOW",
+   "where": [
+    "claude/invgraph-s2-evidence-join @b13e5e60 (11 ahead)",
+    "claude/invgraph-s4-lifecycle @5a60de70 (15 ahead)",
+    "S5 not built",
+    "workflow wf_613eabec-e63"
+   ],
+   "progress": "S2 and S4 built; S5 queued.",
+   "remaining": "Rebase on fixed S1, build S5, review, PRs, merge.",
+   "depends_on": "V10 (S2, S4); S2+S3+S4 (S5).",
+   "owner_input": "None.",
+   "owner_first": false,
+   "wave": 5
+  },
+  {
+   "id": "V12",
+   "project": "VIGIL",
+   "name": "Seat billing at launch (includes legal-gov S8)",
+   "what": "Plans include seats; extra member $25/month; add/remove rules; Team screen.",
+   "status": "PLANNED_NOT_STARTED",
+   "where": [
+    "no branch",
+    "owner decision 2026-11-24 (vigil-launch-pricing-decisions-2026-11-24.md)",
+    "legal-gov S8 in gap matrix (folded in)"
+   ],
+   "progress": "Decided only.",
+   "remaining": "Stripe seat billing, invite member limit, Team screen, seat-only plan for pay-as-you-go, terms section 6 seat text.",
+   "depends_on": "After V01 and V02.",
+   "owner_input": "Counsel wording for terms section 6 (before merge).",
+   "owner_first": false,
+   "wave": 3
+  },
+  {
+   "id": "V13",
+   "project": "VIGIL",
+   "name": "Evidence 90-day auto-delete + /privacy text",
+   "what": "Delete raw scan evidence 90 days after an assessment; keep finding-backing evidence and reports; update /privacy.",
+   "status": "PLANNED_NOT_STARTED",
+   "where": [
+    "no branch",
+    "owner decision 2026-11-24 (vigil-data-retention-decisions-2026-11-24.md)"
+   ],
+   "progress": "Schedule decided; backup bucket 90-day rule already applied.",
+   "remaining": "Check proof bundles still re-verify; build sweep; then update /privacy.",
+   "depends_on": "After Nov 29 reset.",
+   "owner_input": "None.",
+   "owner_first": false,
+   "wave": 3
+  },
+  {
+   "id": "V14",
+   "project": "VIGIL",
+   "name": "Multi-language code scan",
+   "what": "Code scanning for JS/TS, Go, Java, Ruby, PHP (full) and Rust, C/C++ (lower grade); off by default.",
+   "status": "HALF_DONE",
+   "where": [
+    "claude/multilang-codescan @8b1b8e7a",
+    "/home/kali/vigil-wt-multilang (5 ahead, no PR)",
+    "plan ~/.claude/plans/multilang-codebase-plan.md",
+    "resume script wf/multilang-r3.js"
+   ],
+   "progress": "Phase 1 checkpoint (~52 files), unverified.",
+   "remaining": "Verify phase 1, six language builders, integrate, review, one PR.",
+   "depends_on": "Queued behind AEGIS and investigation-graph load.",
+   "owner_input": "None for phase 1.",
+   "owner_first": false,
+   "wave": 6
+  },
+  {
+   "id": "V15",
+   "project": "VIGIL",
+   "name": "Legal-gov S2 privacy center",
+   "what": "Privacy center and cookie consent.",
+   "status": "HALF_DONE",
+   "where": [
+    "claude/legalgov-s2-privacy-center @d4712bb5",
+    "/home/kali/vigil-wt-legalgov-s2 (3 ahead)",
+    "objections objections-LG-S2.json"
+   ],
+   "progress": "Built; objections recorded.",
+   "remaining": "Fix round, review, rebase on S1, PR; match cookie text to Cloudflare scripts.",
+   "depends_on": "V09",
+   "owner_input": "Cookie and subprocessor text.",
+   "owner_first": false,
+   "wave": 7
+  },
+  {
+   "id": "V16",
+   "project": "VIGIL",
+   "name": "Legal-gov S3 data rights",
+   "what": "Export my data and close my account.",
+   "status": "HALF_DONE",
+   "where": [
+    "claude/legalgov-s3-data-rights @f2691734",
+    "/home/kali/vigil-wt-legalgov-s3 (10 ahead)",
+    "objections objections-LG-S3.json"
+   ],
+   "progress": "Substantial; labelled WIP.",
+   "remaining": "Verify redaction and deletion scope, review, PR; match 30-day reply rule.",
+   "depends_on": "V09",
+   "owner_input": "Data-rights policy text.",
+   "owner_first": false,
+   "wave": 7
+  },
+  {
+   "id": "V17",
+   "project": "VIGIL",
+   "name": "Legal-gov S4 legal archive",
+   "what": "Permanent record of accepted terms.",
+   "status": "HALF_DONE",
+   "where": [
+    "claude/legalgov-s4-legal-archive @120f0c3e",
+    "/home/kali/vigil-wt-legalgov-s4 (13 ahead)",
+    "objections objections-LG-S4.json"
+   ],
+   "progress": "Most advanced after S1; real restore tests.",
+   "remaining": "Fix round, review, PR.",
+   "depends_on": "V09",
+   "owner_input": "Final policy texts.",
+   "owner_first": false,
+   "wave": 7
+  },
+  {
+   "id": "V18",
+   "project": "VIGIL",
+   "name": "Legal-gov S5 AI governance",
+   "what": "Explains AI use and human control.",
+   "status": "HALF_DONE",
+   "where": [
+    "claude/legalgov-s5-ai-governance @4b77144c",
+    "/home/kali/vigil-wt-legalgov-s5 (8 ahead)"
+   ],
+   "progress": "Close to complete; not reviewed.",
+   "remaining": "Review, fix, PR.",
+   "depends_on": "V09",
+   "owner_input": "AI-use policy text.",
+   "owner_first": false,
+   "wave": 7
+  },
+  {
+   "id": "V19",
+   "project": "VIGIL",
+   "name": "Legal-gov S10 billing issue form",
+   "what": "Report a billing issue.",
+   "status": "HALF_DONE",
+   "where": [
+    "claude/legalgov-s10-billing-issue @10c0ff80",
+    "/home/kali/vigil-wt-legalgov-s10 (3 ahead)"
+   ],
+   "progress": "Mid-build checkpoint.",
+   "remaining": "Finish, review, PR.",
+   "depends_on": "V09",
+   "owner_input": "None.",
+   "owner_first": false,
+   "wave": 7
+  },
+  {
+   "id": "V20",
+   "project": "VIGIL",
+   "name": "Legal-gov S11 plans + cancel",
+   "what": "Self-serve plan change and cancel at period end.",
+   "status": "HALF_DONE",
+   "where": [
+    "claude/legalgov-s11-plans-cancel @29447126",
+    "/home/kali/vigil-wt-legalgov-s11 (4 ahead)"
+   ],
+   "progress": "Mid-build checkpoint.",
+   "remaining": "Finish, review, PR; align with #1217 plans.",
+   "depends_on": "V09; PR-G #1199 (merged)",
+   "owner_input": "None.",
+   "owner_first": false,
+   "wave": 7
+  },
+  {
+   "id": "V21",
+   "project": "VIGIL",
+   "name": "Legal-gov S12 authorizations page",
+   "what": "Customer view of signed engagement authorizations.",
+   "status": "HALF_DONE",
+   "where": [
+    "claude/legalgov-s12-authorizations @f8149f5f",
+    "/home/kali/vigil-wt-legalgov-s12 (4 ahead)"
+   ],
+   "progress": "Mid-build checkpoint.",
+   "remaining": "Finish, review, PR.",
+   "depends_on": "V09; consumer C #1186 (merged)",
+   "owner_input": "None.",
+   "owner_first": false,
+   "wave": 7
+  },
+  {
+   "id": "V22",
+   "project": "VIGIL",
+   "name": "Legal-gov S7 seller identity",
+   "what": "SIGIL SARL shown as seller on checkout and invoices.",
+   "status": "PLANNED_NOT_STARTED",
+   "where": [
+    "no branch",
+    "gap matrix S7"
+   ],
+   "progress": "Planned only.",
+   "remaining": "Build; decouple from parked S6.",
+   "depends_on": "S6 per plan (recommend removing)",
+   "owner_input": "Which company details to show.",
+   "owner_first": true,
+   "wave": 7
+  },
+  {
+   "id": "V23",
+   "project": "VIGIL",
+   "name": "Legal-gov S6 tax (parked)",
+   "what": "Itemised tax on checkout and invoice.",
+   "status": "HALF_DONE",
+   "where": [
+    "claude/legalgov-s6-tax @c7f1196e",
+    "/home/kali/vigil-wt-legalgov-s6 (1 WIP commit)"
+   ],
+   "progress": "Early.",
+   "remaining": "Parked by owner: no tax at launch.",
+   "depends_on": "Seller-of-record / VAT question",
+   "owner_input": "Only if owner asks.",
+   "owner_first": true,
+   "wave": null
+  },
+  {
+   "id": "V24",
+   "project": "VIGIL",
+   "name": "Legal-gov S9 promo codes (parked)",
+   "what": "Promotional credits and codes.",
+   "status": "HALF_DONE",
+   "where": [
+    "claude/legalgov-s9-promo @5d358b6e",
+    "/home/kali/vigil-wt-legalgov-s9 (1 WIP commit)"
+   ],
+   "progress": "Barely started.",
+   "remaining": "Parked by owner: no promos at launch; never create Stripe coupons.",
+   "depends_on": "",
+   "owner_input": "Only if owner asks.",
+   "owner_first": true,
+   "wave": null
+  },
+  {
+   "id": "V25",
+   "project": "VIGIL",
+   "name": "Evidence-build modules (3, uncommitted)",
+   "what": "New evidence modules never committed.",
+   "status": "HALF_DONE",
+   "where": [
+    "/home/kali/vigil-wt-ev-moduleA (ev-build-moduleA, sensor edits)",
+    "/home/kali/vigil-ev-moduleb (ev-build-moduleb-egress, evidence_config staged)",
+    "/home/kali/vigil-ev-transport-wt (ev-build-transport, evidence_transport)",
+    "all on base 7cc3ca30",
+    "refs/wip snapshots 20261124"
+   ],
+   "progress": "Written ~Oct 25, never committed.",
+   "remaining": "Commit to safety branch; if wanted, rebase and PR.",
+   "depends_on": "",
+   "owner_input": "Still wanted?",
+   "owner_first": true,
+   "wave": 0
+  },
+  {
+   "id": "V26",
+   "project": "VIGIL",
+   "name": "Main checkout loose edits",
+   "what": "Primary checkout on an old merged branch with uncommitted edits.",
+   "status": "HALF_DONE",
+   "where": [
+    "/home/kali/vigil on meridian-s5-expansion @f0a431ad",
+    "modified console/actions.py, console/api.py, vigil_core/rbac.py",
+    "untracked docs, targets, tools/vps-bringup.sh"
+   ],
+   "progress": "Edits exist; purpose unclear.",
+   "remaining": "Save edits to a branch; move checkout back to main; check no agent uses it.",
+   "depends_on": "",
+   "owner_input": "Keep these edits?",
+   "owner_first": true,
+   "wave": 0
+  },
+  {
+   "id": "V27",
+   "project": "VIGIL",
+   "name": "Key-like files in old worktree",
+   "what": "Untracked key and ledger files in a merged worktree.",
+   "status": "HALF_DONE",
+   "where": [
+    "/home/kali/sx-s2 (untracked; not opened)"
+   ],
+   "progress": "Not committed.",
+   "remaining": "Move to safe storage; confirm never pushed.",
+   "depends_on": "",
+   "owner_input": "Owner call; rotate if unsure.",
+   "owner_first": true,
+   "wave": 0
+  },
+  {
+   "id": "V28",
+   "project": "VIGIL",
+   "name": "CI nightly split",
+   "what": "Move heaviest tests to a nightly run.",
+   "status": "HALF_DONE",
+   "where": [
+    "ci/crucible-core-nightly-split @70ee495e",
+    "/home/kali/vigil-wt-ci-nightly"
+   ],
+   "progress": "One commit (Sep 29), never a PR.",
+   "remaining": "Rebase and PR, or park.",
+   "depends_on": "",
+   "owner_input": "Still wanted?",
+   "owner_first": true,
+   "wave": 8
+  },
+  {
+   "id": "V29",
+   "project": "VIGIL",
+   "name": "Nuclei template pack",
+   "what": "Bundled vetted scanner templates, off by default.",
+   "status": "HALF_DONE",
+   "where": [
+    "prod/m1-nuclei-corpus @672f9707",
+    "/home/kali/vigil-wt-nuclei (3 ahead, 1397 behind)"
+   ],
+   "progress": "Last review blocked; fix not re-reviewed.",
+   "remaining": "Re-review, rebase, PR, or park.",
+   "depends_on": "",
+   "owner_input": "Revive or park?",
+   "owner_first": true,
+   "wave": 8
+  },
+  {
+   "id": "V30",
+   "project": "VIGIL",
+   "name": "Release / build-stamping tooling",
+   "what": "Version stamps, changelog generator, version tests.",
+   "status": "HALF_DONE",
+   "where": [
+    "iss-release-tooling-v @56391f2a",
+    "/home/kali/vigil-wt-release (9 untracked files, 1910 behind)",
+    "refs/wip/iss-release-tooling-v"
+   ],
+   "progress": "Files written; only a salvage commit.",
+   "remaining": "Commit to fresh branch and PR, or park.",
+   "depends_on": "",
+   "owner_input": "Revive or park?",
+   "owner_first": true,
+   "wave": 8
+  },
+  {
+   "id": "V31",
+   "project": "VIGIL",
+   "name": "PCR full live run + JS package cache",
+   "what": "One full autonomous fix run producing a real diff; safe JS dependency cache.",
+   "status": "PLANNED_NOT_STARTED",
+   "where": [
+    "memory vigil-pcr-program.md"
+   ],
+   "progress": "Blockers fixed; last run stopped on exhausted API credits.",
+   "remaining": "Top up credits and run; build cache.",
+   "depends_on": "API budget",
+   "owner_input": "Approve API budget.",
+   "owner_first": true,
+   "wave": 8
+  },
+  {
+   "id": "V32",
+   "project": "VIGIL",
+   "name": "Known-limitations burndown (W16)",
+   "what": "28 documented honest gaps.",
+   "status": "PLANNED_NOT_STARTED",
+   "where": [
+    "/home/kali/vigil/docs/limitations/inventory.json (dated 2026-10-08)"
+   ],
+   "progress": "Each gap has a guard test.",
+   "remaining": "Re-check against current code; close fixed; file the rest.",
+   "depends_on": "Some need deployment or hardware.",
+   "owner_input": "External audit team choice.",
+   "owner_first": false,
+   "wave": 8
+  },
+  {
+   "id": "V33",
+   "project": "VIGIL",
+   "name": "Authorship history rewrite",
+   "what": "Apply agreed author trailers to old commits.",
+   "status": "PLANNED_NOT_STARTED",
+   "where": [
+    "memory vigil-authorship-contributors.md"
+   ],
+   "progress": "Policy agreed.",
+   "remaining": "Rewrite and force-push.",
+   "depends_on": "No open PRs at the time.",
+   "owner_input": "Approve timing.",
+   "owner_first": true,
+   "wave": 8
+  },
+  {
+   "id": "V34",
+   "project": "VIGIL",
+   "name": "Production deployment (AWS)",
+   "what": "Turn on the live service.",
+   "status": "PLANNED_NOT_STARTED",
+   "where": [
+    "runbook docs/runbooks/AWS-DEPLOY.md",
+    "infrastructure provisioned 2026-11-23; server stopped until deploy day"
+   ],
+   "progress": "Infrastructure ready.",
+   "remaining": "Start server, install, DNS switch, edge hooks; disable admin key after.",
+   "depends_on": "Launch code done + owner approval.",
+   "owner_input": "Approve each command; type every secret; confirm email login, payout currency, scan-engine key, Google branding.",
+   "owner_first": true,
+   "wave": "deploy-gate"
+  },
+  {
+   "id": "A01",
+   "project": "AEGIS",
+   "name": "AEGIS Wave 0 + Wave 1 (9 slices)",
+   "what": "AS-0 governance, AS-25 done-records, AS-1a test rig, AS-2a authority v2, AS-7a licence gate, AS-27a break-glass, AS-3a strict drain, AS-4a overclaims, AS-2l org proof cascade.",
+   "status": "IN_PROGRESS_NOW",
+   "where": [
+    "claude/aegis-as0-governance @68a22afd (10 ahead, 8 uncommitted)",
+    "claude/aegis-as25-done-records @15eea6a4 (13 ahead)",
+    "claude/aegis-as1a-tt-rig @7f4218a0 (13 ahead)",
+    "claude/aegis-as2a-authority-v2 @74bf4bd4 (6 ahead)",
+    "claude/aegis-as7a-licence-gate @ade8beb0 (20 ahead)",
+    "claude/aegis-as27a-break-glass @2aeba6e7 (10 ahead)",
+    "claude/aegis-as3a-drain-strict @fa48d7f6 (7 ahead)",
+    "claude/aegis-as4a-overclaims @f431fb86 (7 ahead)",
+    "claude/aegis-as2l-proof-cascade @10536bda (6 ahead)",
+    "worktrees /home/kali/vigil-wt-aegis-<id>, base b6d65028",
+    "~/.cache/vigil-tmp/aegis-r5 (incl. mut-as27a-r1)",
+    "workflow wf_e1cfb6de-25a"
+   ],
+   "progress": "Builds and fix rounds under way; no PRs yet.",
+   "remaining": "Finish, review panels (max 2 fix rounds); each merge needs recorded owner approval.",
+   "depends_on": "Owner approval per merge.",
+   "owner_input": "Approve merges; confirm assumed D13, D16, D29, D30, D31, D33, D35.",
+   "owner_first": false,
+   "wave": 4
+  },
+  {
+   "id": "A02",
+   "project": "AEGIS",
+   "name": "AEGIS Waves 2-23 (~63 slices)",
+   "what": "Gateway, UI, fleet, TLS, edge/DDoS, health, staging rig AS-26, ops, self-security, rollout.",
+   "status": "PLANNED_NOT_STARTED",
+   "where": [
+    "plan ~/.claude/plans/parsed-popping-lemur.md",
+    "~/.claude/plans/aegis-threat-register.private.json"
+   ],
+   "progress": "Design complete; approved 2026-11-19.",
+   "remaining": "Build wave by wave; staging TT-A first; fix top 5 threat-register defects first.",
+   "depends_on": "A01 merged; staging infrastructure.",
+   "owner_input": "Open decisions D2r-D28; gates R1-R4; approval per merge.",
+   "owner_first": true,
+   "wave": 4
+  },
+  {
+   "id": "A03",
+   "project": "AEGIS",
+   "name": "FORGE RAMPART slice 2+",
+   "what": "TLS front end and agentless checks for the proof-carrying web firewall.",
+   "status": "PLANNED_NOT_STARTED",
+   "where": [
+    "/home/kali/Pictures/PENTEST-main",
+    "docs/FORGE-RAMPART-CHARTER.md",
+    "slice 1 PR #94 merged"
+   ],
+   "progress": "Slice 1 merged.",
+   "remaining": "Build next slices under signed charter.",
+   "depends_on": "Charter per slice.",
+   "owner_input": "Sign charter per slice.",
+   "owner_first": true,
+   "wave": 8
+  },
+  {
+   "id": "C01",
+   "project": "CRUCIBLE",
+   "name": "PR #96 release tooling",
+   "what": "VERSION, changelog, release workflow, --version flags.",
+   "status": "OPEN_PR",
+   "where": [
+    "iss-release-tooling @a99bd6d (2 ahead, 1 behind)"
+   ],
+   "progress": "Open since 2026-08-23; mergeable but BLOCKED.",
+   "remaining": "Rebase, pass checks, merge, or close.",
+   "depends_on": "",
+   "owner_input": "Merge or close?",
+   "owner_first": true,
+   "wave": 1
+  },
+  {
+   "id": "C02",
+   "project": "CRUCIBLE",
+   "name": "PR #95 docs-truth audits",
+   "what": "Code-checked feature list and limitation inventory.",
+   "status": "OPEN_PR",
+   "where": [
+    "iss-docs-audits-w15 @155c6ba (2 ahead, 1 behind)"
+   ],
+   "progress": "Open since 2026-08-23; mergeable but BLOCKED.",
+   "remaining": "Rebase, pass checks, merge, or close.",
+   "depends_on": "",
+   "owner_input": "Merge or close?",
+   "owner_first": true,
+   "wave": 1
+  },
+  {
+   "id": "C03",
+   "project": "CRUCIBLE",
+   "name": "Phase C2b cloud posture launch",
+   "what": "Seedless cloud/Kubernetes posture checks from the console.",
+   "status": "IN_PROGRESS_NOW",
+   "where": [
+    "phaseC2b-cloud-launch @7209ffa",
+    ".claude/worktrees/agent-a64493ae40f7c2ccb (1 commit + 3 uncommitted)"
+   ],
+   "progress": "One slice committed; edits in progress.",
+   "remaining": "Finish, commit, PR, merge.",
+   "depends_on": "",
+   "owner_input": "Confirm an agent is still attached.",
+   "owner_first": false,
+   "wave": 8
+  },
+  {
+   "id": "C04",
+   "project": "CRUCIBLE",
+   "name": "Phase C3 public-exposure proof",
+   "what": "Proves a cloud resource is publicly reachable.",
+   "status": "IN_PROGRESS_NOW",
+   "where": [
+    "phaseC3-active-exposure @7dda1e1",
+    ".claude/worktrees/agent-ac2adc9eac7d58743"
+   ],
+   "progress": "Slice committed, clean.",
+   "remaining": "Review, merge.",
+   "depends_on": "C03",
+   "owner_input": "Confirm an agent is still attached.",
+   "owner_first": false,
+   "wave": 8
+  },
+  {
+   "id": "C05",
+   "project": "CRUCIBLE",
+   "name": "Phase D drift watch + zero-retention sessions",
+   "what": "Change monitoring and sessions that keep no data.",
+   "status": "IN_PROGRESS_NOW",
+   "where": [
+    "phaseD-drift-ephemeral @34d5980",
+    ".claude/worktrees/agent-ae13c249ca5e88c41 (1 commit + 2 staged)"
+   ],
+   "progress": "Partly done.",
+   "remaining": "Finish, PR, merge.",
+   "depends_on": "",
+   "owner_input": "Confirm an agent is still attached.",
+   "owner_first": false,
+   "wave": 8
+  },
+  {
+   "id": "C06",
+   "project": "CRUCIBLE",
+   "name": "Wave-4 D2 evidence binding",
+   "what": "Identity, scope and freshness bound into each evidence certificate.",
+   "status": "IN_PROGRESS_NOW",
+   "where": [
+    "wave4-D2-binding @f2077fa",
+    ".claude/worktrees/wf_61c7559a-768-2"
+   ],
+   "progress": "Slice committed, clean.",
+   "remaining": "Review, merge.",
+   "depends_on": "",
+   "owner_input": "Confirm workflow still running.",
+   "owner_first": false,
+   "wave": 8
+  },
+  {
+   "id": "C07",
+   "project": "CRUCIBLE",
+   "name": "Forged-token acceptance check",
+   "what": "Proves a forged login token is actually accepted.",
+   "status": "HALF_DONE",
+   "where": [
+    "coverage/wave3-4-forgery-acceptance @ac5bc67 (pushed, 1 ahead, no PR)"
+   ],
+   "progress": "One commit, months old.",
+   "remaining": "PR and review against known soundness rules, or retire.",
+   "depends_on": "",
+   "owner_input": "Revive or retire?",
+   "owner_first": true,
+   "wave": 8
+  },
+  {
+   "id": "C08",
+   "project": "CRUCIBLE",
+   "name": "mrbeanpanel engagement",
+   "what": "First real engagement: 6 findings, 4 reports.",
+   "status": "HALF_DONE",
+   "where": [
+    "targets/mrbeanpanel/ (untracked; attack-tree.md modified)"
+   ],
+   "progress": "Charter signed; findings and reports written; retest.md empty template; numbering gap 006-019.",
+   "remaining": "Decide storage; explain the gap; run retest after fixes.",
+   "depends_on": "Fixes on the target side.",
+   "owner_input": "Where to keep it; retest window.",
+   "owner_first": true,
+   "wave": 8
+  },
+  {
+   "id": "C09",
+   "project": "CRUCIBLE",
+   "name": "Loose root documents",
+   "what": "AGENTS.md, SIGIL.md (draft), benchmark-report.md, crucible-architecture.html, AEGIS detection-mirror doc.",
+   "status": "HALF_DONE",
+   "where": [
+    "PENTEST repo root, untracked"
+   ],
+   "progress": "Written, never committed.",
+   "remaining": "Commit the ones wanted.",
+   "depends_on": "",
+   "owner_input": "Which belong in the repo?",
+   "owner_first": true,
+   "wave": 0
+  },
+  {
+   "id": "C10",
+   "project": "CRUCIBLE",
+   "name": "AEGIS-CRUCIBLE package",
+   "what": "Strategy dossier, PCF spec, RAMPART design and demo, 11 builder agents.",
+   "status": "HALF_DONE",
+   "where": [
+    "AEGIS-CRUCIBLE-package/ (untracked, 22 files)"
+   ],
+   "progress": "Complete as a bundle.",
+   "remaining": "Commit or keep as export; keep in step with merged code.",
+   "depends_on": "RAMPART #94 (merged)",
+   "owner_input": "Commit or export?",
+   "owner_first": true,
+   "wave": 0
+  },
+  {
+   "id": "C11",
+   "project": "CRUCIBLE",
+   "name": "Knowledge graph refresh",
+   "what": "Agents' code map is out of date.",
+   "status": "HALF_DONE",
+   "where": [
+    "graphify-out/needs_update"
+   ],
+   "progress": "Marker set.",
+   "remaining": "Run graphify update and commit.",
+   "depends_on": "",
+   "owner_input": "None.",
+   "owner_first": false,
+   "wave": 8
+  },
+  {
+   "id": "C12",
+   "project": "CRUCIBLE",
+   "name": "Cloud checks live runners",
+   "what": "Live credential-gated runners for offline-proven cloud checks.",
+   "status": "PLANNED_NOT_STARTED",
+   "where": [
+    "memory vigil-e-series-cloud-exploit-program.md",
+    "checks merged #286-#293"
+   ],
+   "progress": "Offline proof complete.",
+   "remaining": "Build gated runners; run only on authorized targets.",
+   "depends_on": "Real credentials + signed charter.",
+   "owner_input": "Authorized test accounts and charter.",
+   "owner_first": true,
+   "wave": 8
+  },
+  {
+   "id": "C13",
+   "project": "CRUCIBLE",
+   "name": "Seven empty iss-* branches",
+   "what": "Placeholders: backup/DR, CI hygiene, CI matrix, quality gates, docs claims, signed manifests, supply-chain locks.",
+   "status": "PLANNED_NOT_STARTED",
+   "where": [
+    "local branches at a456263, no commits"
+   ],
+   "progress": "Names only.",
+   "remaining": "Prioritise or leave parked.",
+   "depends_on": "",
+   "owner_input": "Which matter?",
+   "owner_first": true,
+   "wave": 8
+  },
+  {
+   "id": "S01",
+   "project": "SIGIL",
+   "name": "Hard-prune Slice E",
+   "what": "Crash-safe step that actually deletes pruned data, behind 3 owner gates.",
+   "status": "PLANNED_NOT_STARTED",
+   "where": [
+    "/home/kali/sigil, no branch",
+    "Slices A-D merged #18-#21 (main 19d33d8)"
+   ],
+   "progress": "Groundwork done.",
+   "remaining": "Build both phases, kill-9 crash test, pruned responses; pass 3 gates before first prune.",
+   "depends_on": "Slices A-D (done)",
+   "owner_input": "3 gate approvals.",
+   "owner_first": false,
+   "wave": 8
+  },
+  {
+   "id": "S02",
+   "project": "SIGIL",
+   "name": "X build-in-public kit",
+   "what": "Scripts, 12 posts, 9 images, guardrails, runbook for a public X account.",
+   "status": "HALF_DONE",
+   "where": [
+    "/home/kali/sigil working tree, untracked: scripts/, content/, strategy/, GUARDRAILS.md, HANDOFF.md, .env.example; README.md modified"
+   ],
+   "progress": "Looks finished; never committed.",
+   "remaining": "Commit (here or own repo); post only from owner machine.",
+   "depends_on": "",
+   "owner_input": "Where to keep it; X keys; go-live approval.",
+   "owner_first": true,
+   "wave": 0
+  },
+  {
+   "id": "X01",
+   "project": "VIGIL-APEX",
+   "name": "Tip portal rate limit R-06",
+   "what": "Per-Tor-circuit limit on whistleblower tip submissions.",
+   "status": "HALF_DONE",
+   "where": [
+    "/home/kali/vigil-apex feat/gap-onion-rate-limit-real @64c02aa9 (4 ahead of local main)"
+   ],
+   "progress": "Looks complete with tests and runbook.",
+   "remaining": "Merge into local main.",
+   "depends_on": "",
+   "owner_input": "Approve merge.",
+   "owner_first": false,
+   "wave": 8
+  },
+  {
+   "id": "X02",
+   "project": "VIGIL-APEX",
+   "name": "No backup remote",
+   "what": "337 commits exist only on this disk.",
+   "status": "HALF_DONE",
+   "where": [
+    "/home/kali/vigil-apex (git remote -v empty)"
+   ],
+   "progress": "None.",
+   "remaining": "Push to a private remote.",
+   "depends_on": "",
+   "owner_input": "Where to host it.",
+   "owner_first": true,
+   "wave": 0
+  },
+  {
+   "id": "X03",
+   "project": "VIGIL-APEX",
+   "name": "Weaknesses W-10 and W-14",
+   "what": "W-10 native hardware-key helper; W-14 grow hallucination test set to ~200 rows.",
+   "status": "HALF_DONE",
+   "where": [
+    "docs/weaknesses/W-10.md",
+    "docs/weaknesses/W-14.md"
+   ],
+   "progress": "24 of 27 weaknesses closed.",
+   "remaining": "W-10 helper (M3-M4); W-14 corpus.",
+   "depends_on": "",
+   "owner_input": "None.",
+   "owner_first": false,
+   "wave": 8
+  },
+  {
+   "id": "X04",
+   "project": "VIGIL-APEX",
+   "name": "Phase-1 closure gates",
+   "what": "Hardware keys, key ceremonies, PGP exchange, legal declarations, partner letters.",
+   "status": "PLANNED_NOT_STARTED",
+   "where": [
+    "docs/TODO_PHASE1_CLOSURE.md"
+   ],
+   "progress": "All shippable code shipped.",
+   "remaining": "Owner/architect actions only.",
+   "depends_on": "",
+   "owner_input": "All of it.",
+   "owner_first": true,
+   "wave": 8
+  },
+  {
+   "id": "O01",
+   "project": "OTHER",
+   "name": "RECOR draft PRs #497 and #498",
+   "what": "Two very large draft PRs with October audit fixes.",
+   "status": "OPEN_PR",
+   "where": [
+    "/home/kali/RECOR",
+    "remediation/2026-10",
+    "national-hosting/tip"
+   ],
+   "progress": "Drafts, never merged; last update Oct 25.",
+   "remaining": "Finish and merge, split, or close.",
+   "depends_on": "October 2026 audit",
+   "owner_input": "Decide fate.",
+   "owner_first": true,
+   "wave": 1
+  },
+  {
+   "id": "O02",
+   "project": "OTHER",
+   "name": "COMPANY content branches (8)",
+   "what": "Bilingual website content: pilots, editions, news items.",
+   "status": "HALF_DONE",
+   "where": [
+    "/home/kali/COMPANY content/* branches on origin, no PRs"
+   ],
+   "progress": "1-2 commits each.",
+   "remaining": "Check each claim is true; merge.",
+   "depends_on": "",
+   "owner_input": "Which to publish.",
+   "owner_first": true,
+   "wave": 8
+  },
+  {
+   "id": "O03",
+   "project": "OTHER",
+   "name": "FLAIRE-AI CI fix",
+   "what": "Make the test pipeline pass.",
+   "status": "HALF_DONE",
+   "where": [
+    "/home/kali/FLAIRE-AI fix/ci-green-2 @388c296 (3 ahead, no PR)"
+   ],
+   "progress": "Done in branch since May.",
+   "remaining": "PR, merge.",
+   "depends_on": "",
+   "owner_input": "Approve.",
+   "owner_first": false,
+   "wave": 8
+  }
+ ],
+ "abandoned_or_unknown": [
+  {
+   "id": "Z01",
+   "name": "CRUCIBLE_ROOT path-escape fix",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "/home/kali/vigil-wt-home-paths fix-crucible-root-escapes-to-home @ae3dcda7",
+   "why": "Salvage commit on 2-month-old base.",
+   "recommendation": "ask owner"
+  },
+  {
+   "id": "Z02",
+   "name": "prod/ws11b-wave23",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "/home/kali/vigil-wt-wave23 @6539bc1e",
+   "why": "PR #881 closed unmerged; superseded by #874/#879/#919.",
+   "recommendation": "archive"
+  },
+  {
+   "id": "Z03",
+   "name": "Strix handoff branch",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "/home/kali/vigil-wt-repoconnect strix/handoff-20261029 @e8924705",
+   "why": "Month-old handoff notes with 3 listed issues.",
+   "recommendation": "ask owner"
+  },
+  {
+   "id": "Z04",
+   "name": "PCR self-approval mode",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "memory vigil-pcr-program.md",
+   "why": "Deliberately not built; must stay human-gated.",
+   "recommendation": "archive"
+  },
+  {
+   "id": "Z05",
+   "name": "Nov 8-13 WIP branches on GitHub",
+   "status": "UNKNOWN",
+   "where": "claude/audit-e3a-seam-base, claude/audit-e8-paused-expiry-settles, claude/front-c-prune-pr-a, claude/codeql-clone-symlinks, claude/codeql-console-slug, claude/ci-two-plane-skip-gap, claude/pauseresume-pr1, claude/pauseresume-pr2",
+   "why": "Recent work, no PR; audit-e8 cut off by usage limit.",
+   "recommendation": "ask owner"
+  },
+  {
+   "id": "Z06",
+   "name": "327 unmerged remote branches",
+   "status": "UNKNOWN",
+   "where": "vigil-sovereign remote",
+   "why": "Mostly historical snapshots.",
+   "recommendation": "archive"
+  },
+  {
+   "id": "Z07",
+   "name": "38 refs/wip snapshots",
+   "status": "UNKNOWN",
+   "where": "/home/kali/vigil refs/wip/*",
+   "why": "Automatic safety net.",
+   "recommendation": "archive (keep)"
+  },
+  {
+   "id": "Z08",
+   "name": "vigil-builder-backups",
+   "status": "UNKNOWN",
+   "where": "/home/kali/vigil-builder-backups/20261119-0555",
+   "why": "Snapshots of B, C, G, I, J2; all since merged.",
+   "recommendation": "archive (keep)"
+  },
+  {
+   "id": "Z09",
+   "name": "FORGE Domain 7 anomaly + synthesis domains",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "memory pcf-forge-program.md",
+   "why": "Probabilistic signal cannot be a near-zero-FP proof.",
+   "recommendation": "archive"
+  },
+  {
+   "id": "Z10",
+   "name": "~40 leftover agent worktree branches",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "PENTEST worktree-agent-*, worktree-wf-*; idle worktree agent-ae25b462d667e6222",
+   "why": "Old scaffolding.",
+   "recommendation": "archive"
+  },
+  {
+   "id": "Z11",
+   "name": "Auto-made loopback targets",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "PENTEST targets/wanr, targets/diag-charter-2037903, targets/diag-unset-2149073",
+   "why": "Machine-made test charters.",
+   "recommendation": "archive"
+  },
+  {
+   "id": "Z12",
+   "name": "mrbeanpanel UTI demo",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "PENTEST targets/mrbeanpanel-uti-demo",
+   "why": "Unsigned draft demo.",
+   "recommendation": "archive"
+  },
+  {
+   "id": "Z13",
+   "name": "codescan-demo",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "PENTEST codescan-demo/ (nested repo)",
+   "why": "Permanent fixture containing a key file.",
+   "recommendation": "archive (keep as fixture; never publish its key)"
+  },
+  {
+   "id": "Z14",
+   "name": "strix_runs output",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "PENTEST strix_runs/",
+   "why": "Runtime output.",
+   "recommendation": "archive (add to .gitignore)"
+  },
+  {
+   "id": "Z15",
+   "name": ".agents and .codex config",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "PENTEST repo root",
+   "why": "Other-harness tooling, untracked.",
+   "recommendation": "ask owner"
+  },
+  {
+   "id": "Z16",
+   "name": "Stray framework copy",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "/home/kali/framework",
+   "why": "Unexplained copy of framework/v2.",
+   "recommendation": "ask owner"
+  },
+  {
+   "id": "Z17",
+   "name": "Stray targets folder",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "/home/kali/targets",
+   "why": "Old remediation scratch.",
+   "recommendation": "archive"
+  },
+  {
+   "id": "Z18",
+   "name": "VIGIL-APEX audit output and Untitled-1",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "/home/kali/vigil-apex audit/, Untitled-1",
+   "why": "Earlier audit output and loose note.",
+   "recommendation": "archive (keep)"
+  },
+  {
+   "id": "Z19",
+   "name": "VIGIL-APEX Python prototype",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "/home/kali/VIGIL-APEX",
+   "why": "Early spike replaced by monorepo.",
+   "recommendation": "archive"
+  },
+  {
+   "id": "Z20",
+   "name": "FLAIRE original",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "/home/kali/FLAIRE",
+   "why": "Replaced by FLAIRE-AI; remote unresolvable.",
+   "recommendation": "archive"
+  },
+  {
+   "id": "Z21",
+   "name": "RECOR reference-doc build",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "/home/kali/recor-ref-build",
+   "why": "One-off doc assembly.",
+   "recommendation": "archive"
+  },
+  {
+   "id": "Z22",
+   "name": "RECOR build caches",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "/home/kali/recor-check, /home/kali/recor-check-target, /home/kali/recor-test-target",
+   "why": "Rebuildable compiler output (~6.4 GB).",
+   "recommendation": "archive"
+  },
+  {
+   "id": "Z23",
+   "name": "vigil-codescan-demo",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "/home/kali/vigil-codescan-demo",
+   "why": "Local demo repo.",
+   "recommendation": "archive (keep)"
+  },
+  {
+   "id": "Z24",
+   "name": "vigil-demo-output",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "/home/kali/vigil-demo-output",
+   "why": "Finished demo output and video.",
+   "recommendation": "archive (keep)"
+  },
+  {
+   "id": "Z25",
+   "name": "vigil-backups",
+   "status": "ABANDONED_OR_EXPERIMENT",
+   "where": "/home/kali/vigil-backups",
+   "why": "October configuration backups.",
+   "recommendation": "archive (keep)"
+  },
+  {
+   "id": "Z26",
+   "name": "MAMA documents with no code",
+   "status": "UNKNOWN",
+   "where": "/home/kali/Documents/MAMA",
+   "why": "Concept and architecture notes; no repo found.",
+   "recommendation": "ask owner"
+  },
+  {
+   "id": "Z27",
+   "name": "Missing HANDOFF-SESSION.md",
+   "status": "UNKNOWN",
+   "where": "expected in /home/kali/vigil",
+   "why": "Memory notes reference it; file absent.",
+   "recommendation": "ask owner"
+  }
+ ],
+ "done": [
+  "VIGIL meridian-s5 FACT classes #941",
+  "VIGIL Strix S2 transport intake #865",
+  "VIGIL consumer PR-A #1192 and gateway race fix #1194",
+  "VIGIL consumer PR-B posture #1198",
+  "VIGIL consumer PR-C connect #1186",
+  "VIGIL consumer PR-D notifications #1187",
+  "VIGIL consumer PR-F launch queue #1188 and fix-forward #1202",
+  "VIGIL consumer PR-G billing #1199",
+  "VIGIL consumer PR-I proof badge #1200",
+  "VIGIL consumer PR-J wallet #1189 and J2 #1201",
+  "VIGIL consumer PR-K #1197",
+  "VIGIL consumer PR-L attack path #1196",
+  "VIGIL Gate-5 census count-aware #1203",
+  "VIGIL MCP CVE lock #1204",
+  "VIGIL public terms page and legal edge scripts #1215",
+  "VIGIL Stripe webhook edge route #1216",
+  "VIGIL wave-4 M2.1 fixpoint #901",
+  "VIGIL wave-5 M3 anti-relabel #903 area",
+  "VIGIL billing W2b-3 #1134",
+  "VIGIL forge local fix-apply #927",
+  "VIGIL waveA1 seal-at-capture",
+  "VIGIL W7 graph-index performance",
+  "AEGIS multi-gateway blocking #944",
+  "AEGIS FORGE PCF foundation, Domain 7 slices 1-2, Domain 10, dual gate #92 #93",
+  "AEGIS RAMPART slice 1 #94",
+  "CRUCIBLE coverage, veracity, intel, ops-console, SBOM programs #67-#91",
+  "CRUCIBLE E-series cloud checks offline-proven #286-#293",
+  "CRUCIBLE CRUCIBLE_ROOT runtime folder in place",
+  "SIGIL hard-prune Slices A-D #18-#21",
+  "SIGIL zero open PRs, all remote branches merged"
+ ],
+ "added_by_completeness_check": {
+  "appended": "2026-11-24",
+  "by": "independent read-only completeness pass (worktrees, 327 unmerged remote branches, open PRs x3 repos, plans dir, memory notes, git stashes)",
+  "new_items": [
+   {
+    "id": "M1",
+    "project": "AEGIS",
+    "name": "AEGIS-SaaS AE-4b..AE-7 orphan branches",
+    "what": "Earlier (Nov 5) AEGIS-SaaS push: AE-4b sovereign monitoring-report spool drainer + tenant monitoring read route; AE-5 per-protected-host monthly billing; AE-6 managed tenant gateway + per-(org,host) report secrets; AE-7 cross-plane acceptance test + offense-leg CI; plus e2e-verification-25 checkpoint.",
+    "status": "HALF_DONE",
+    "likely_superseded_by": "A01/A02 new AEGIS program (approved 2026-11-19, parsed-popping-lemur.md)",
+    "where": [
+     "origin/claude/aegis-ae4b-ph9x2k (13 ahead, head 555009d1, base 7c74200d, NO PR)",
+     "origin/claude/aegis-ae5-ph9x2k (13 ahead, 42478e15)",
+     "origin/claude/aegis-ae6-ph9x2k (13 ahead, 871cc596)",
+     "origin/claude/aegis-ae7-ph9x2k (13 ahead, 40ccd971)",
+     "origin/claude/e2e-verification-25-ph9x2k (10 ahead, 2c26adfb)",
+     "shared WIP tip cccce012 'AE-4b WIP ... UNTESTED'"
+    ],
+    "progress": "Committed but top commit explicitly WIP/UNTESTED; tests/red-pen were to land in a parallel workflow that never finished. AE-1..AE-3 / SaaS base of the same session DID merge (#996 + #991-#999).",
+    "remaining": "Confirm the monitoring-drainer/per-host-billing/managed-gateway/cross-plane-acceptance work is carried by the new AEGIS waves (A02). If yes, archive. If no, salvage design onto the new program; do not rebuild blind.",
+    "depends_on": "A01/A02",
+    "owner_input": "Superseded by the new AEGIS waves, or still wanted?",
+    "owner_first": true,
+    "wave": 4,
+    "not_in_main_audit": true,
+    "mischaracterized_as": "Z06 bulk (327 July snapshots) \u2014 but these are Nov 5, unmerged, no PR"
+   },
+   {
+    "id": "M2",
+    "project": "VIGIL",
+    "name": "VIGIL salvage git stash",
+    "what": "Git stash holding old dirty main state.",
+    "status": "HALF_DONE",
+    "where": [
+     "/home/kali/vigil stash@{0} 'On main: salvage-main-dirty-327behind-2026-09-30' (2026-09-30, 327 behind)"
+    ],
+    "progress": "One stale stash; distinct from V26 (current meridian-s5 checkout).",
+    "remaining": "Inspect, then drop or save to a branch; almost certainly stale.",
+    "depends_on": "",
+    "owner_input": "Keep or drop?",
+    "owner_first": true,
+    "wave": 0,
+    "not_in_main_audit": true
+   },
+   {
+    "id": "M3",
+    "project": "VIGIL-APEX",
+    "name": "VIGIL-APEX git stash",
+    "what": "Stash of graphify-out knowledge-graph state before an audit step.",
+    "status": "HALF_DONE",
+    "where": [
+     "/home/kali/vigil-apex stash@{0} 'On audit/AUDIT-092-trufflehog-merge-fix: graphify-out before AUDIT-092'"
+    ],
+    "progress": "One stash; graphify-out is regenerable.",
+    "remaining": "Drop or regenerate graphify-out; low value.",
+    "depends_on": "",
+    "owner_input": "Keep or drop?",
+    "owner_first": true,
+    "wave": 0,
+    "not_in_main_audit": true
+   }
+  ],
+  "corrections": [
+   "Z05: claude/pauseresume-pr1-substrate and -pr2-verify-refuses are MERGED (#1033, #1034), not open WIP. Genuinely-open Z05 set is the other six (audit-e3a-seam-base, audit-e8-paused-expiry-settles, front-c-prune-pr-a, codeql-clone-symlinks, codeql-console-slug, ci-two-plane-skip-gap), all NO_PR.",
+   "Z06: '327 unmerged ... July and older' understates recency. ~35 are Nov 6-8 feature branches already SQUASH-MERGED (#996-#1034), dangling only due to squash SHA rewrite = DONE. M1's 5 branches are the real recent-and-unmerged exception. Bulk archive recommendation still holds.",
+   "~18 VIGIL worktrees point at already-merged branches (ci-1198/1199/1202, prB/prC/prF/prG/prI/prJ2/prL, gate5-census, legal-scripts, terms-page, m21, m3fix, mcp-cve, stripe-webhook-edge, waveA1, aegis-multigateway, guardsweep, test-merged). VIGIL analog of Z10: cleanup only, no unfinished work."
+  ],
+  "reconciled_no_gap": [
+   "All 14 vigil-sovereign open PRs = V01-V05; both PENTEST open PRs #95/#96 = C01/C02; SIGIL zero open PRs.",
+   "Every active/WIP worktree maps to an item; AEGIS AS-* and invgraph worktree heads advanced since audit (IN_PROGRESS, expected).",
+   "plans-dir subfolders hold no untracked work: aegis-spec -> A02; vigil-tools = owner automation; wip-snapshots-2026-11-19 = A01 backups; scratch-recovered-2026-11-20 = ephemera.",
+   "MEMORY.md 'PCR Wave D Go/JVM/JS left' is stale: Wave D complete (#792-#795); real remainder (live keyed Strix run + JS dep-cache) = V31.",
+   "MEMORY.md 'E-series E2-E5 designed' is stale: E2-E5 merged offline (#286-#293); real remainder (live credential-gated runners) = C12.",
+   "MEMORY.md consumer 'B,C,E,G,H,I,J2,K,L,D-ff,F-ff building' is stale: all merged except E (V07), H/PR-H (V01), D-ff (V06)."
+  ]
+ },
+ "artex_gap_items": [
+  {
+   "id": "R01",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "Merge evidence-verified graph + host-in-scope demote",
+   "what": "Merge invgraph S1 then S2; add a demote-only check that the cert's oracle-context host equals the finding's asset host and is in charter scope.",
+   "status": "NOT_STARTED",
+   "effort": "S",
+   "artex_wave": "A",
+   "master_wave": 5,
+   "depends_on": "V10,V11",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R02",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "Persistent per-engagement traffic capture index",
+   "what": "Default-OFF exchange index inside the evidence tree (host/method/status/body-sha/action_id); Caido history exported at teardown as LEAD-only sandbox-capture; TrafficCorpus points at it. Gateway stays MITM-free.",
+   "status": "NOT_STARTED",
+   "effort": "M",
+   "artex_wave": "C",
+   "master_wave": 8,
+   "depends_on": "R01",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R03",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "Org-wide asset inventory",
+   "what": "Org-scoped read-model over the intel store + signed spine, keyed by canonical EntityRef id (same key in F4), tenant_id stamped, seen_in per asset, structural SUBDOMAIN_OF edge from the pinned PSL. No new DB.",
+   "status": "NOT_STARTED",
+   "effort": "M",
+   "artex_wave": "B",
+   "master_wave": 5,
+   "depends_on": "R01",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R04",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "TESTED anchor for the S5 coverage view",
+   "what": "ChainStep -[TESTED]-> asset edge written from the executor's PINNED target (what the gate authorized), keyed by EntityRef id; tested_no_finding needs a retained benign response; coverage states separate from verdict.",
+   "status": "NOT_STARTED",
+   "effort": "M",
+   "artex_wave": "B",
+   "master_wave": 5,
+   "depends_on": "V11(S5),R03",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R05",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "Attribution fold over the ownership proof log",
+   "what": "Pure fold so revoke/expiry drops attribution automatically; attribute only to the sole current proof-holder (legal-gov S5 current_holders) or a verified apex with opt-in; RDAP/ASN stay displayed LEADs.",
+   "status": "NOT_STARTED",
+   "effort": "M",
+   "artex_wave": "B",
+   "master_wave": 5,
+   "depends_on": "R03",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R06",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "Charter scope hardening",
+   "what": "Refuse public-suffix and bare-TLD wildcards at authority mint (pinned PSL, fail-closed); CIDR only as an owner-signed netblock with a minimum prefix and the .gov/.mil/.edu/.int floor.",
+   "status": "NOT_STARTED",
+   "effort": "S",
+   "artex_wave": "B",
+   "master_wave": 5,
+   "depends_on": "",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R07",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "Operator replay pane over the existing Repeater",
+   "what": "Default-OFF console route + UI pane calling ONLY the gated Repeater facade; seeded from an evidence exchange or capture-index row; hygiene refusals; results are provenance-labelled observations with 'hand to oracle'.",
+   "status": "NOT_STARTED",
+   "effort": "M",
+   "artex_wave": "C",
+   "master_wave": 8,
+   "depends_on": "R02",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R08",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "By-asset findings tree + fixed-grammar filter",
+   "what": "Read-only tenant-scoped tree counting CONFIRMED and LEAD separately; allowlisted-field filter (no SQL/eval); console + customer app.",
+   "status": "NOT_STARTED",
+   "effort": "M",
+   "artex_wave": "B",
+   "master_wave": 5,
+   "depends_on": "R03,R04",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R09",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "Edge-triggered multi-cycle loop",
+   "what": "Coordinator wakes on blackboard append with debounce + heartbeat patrol; engage_autonomous extended to a budget/watchdog-bounded multi-cycle loop; serial for PROOF; default-OFF.",
+   "status": "NOT_STARTED",
+   "effort": "L",
+   "artex_wave": "D",
+   "master_wave": 8,
+   "depends_on": "",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R10",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "LLM goal decomposition into objectives",
+   "what": "Kernel binding splits the charter objective into falsifiable objectives (refute_on + oracle-class mapping) feeding planner/seed.py; archetype-seed fallback; persisted via invgraph S3.",
+   "status": "NOT_STARTED",
+   "effort": "M",
+   "artex_wave": "D",
+   "master_wave": 8,
+   "depends_on": "V10(S3)",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R11",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "Per-leaf claim lease (SEARCH phase only)",
+   "what": "Extend slug_lease to leaf granularity: claim nonce, heartbeat, sweep returning crashed leaves to the frontier, explicit terminal states; PROOF stays serial.",
+   "status": "NOT_STARTED",
+   "effort": "M/L",
+   "artex_wave": "D",
+   "master_wave": 8,
+   "depends_on": "V08",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R12",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "Per-leaf control: pause / cancel / steer",
+   "what": "Per-leaf steer queue drained before the next gated tool call (WARDEN pre-exec hook shape); per-leaf recoverable cancel; typed abort causes; surfaced in the customer app.",
+   "status": "NOT_STARTED",
+   "effort": "M",
+   "artex_wave": "D",
+   "master_wave": 8,
+   "depends_on": "R11",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R13",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "Narrow cross-session inheritance",
+   "what": "retrieve_priors unions consented partitions: asset nodes as GROUNDING_INTEL (charter-filtered) + terminal outcomes/failure lessons as dead-end priors; wire query_prior_chains; read-only, non-transitive, consent-gated.",
+   "status": "NOT_STARTED",
+   "effort": "M",
+   "artex_wave": "D",
+   "master_wave": 8,
+   "depends_on": "R03",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R14",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "Background enrichment queue",
+   "what": "Deterministic enrichment on the opt-in discover path; per-(kind,id) cooldown on monotonic seq; every probe via the gated HttpExecutor with retained exchange; INTEL only, never FACT.",
+   "status": "NOT_STARTED",
+   "effort": "M",
+   "artex_wave": "D",
+   "master_wave": 8,
+   "depends_on": "",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R15",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "Graph compaction (hot/cold digest)",
+   "what": "Read-only digest view over F4 GraphView; SUMMARY digests cite member ids + Merkle root (chainast.merkle_root); members never deleted; wire chainast into the think loop.",
+   "status": "NOT_STARTED",
+   "effort": "M",
+   "artex_wave": "D",
+   "master_wave": 8,
+   "depends_on": "",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R16",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "bbot import parser",
+   "what": "Typed fields only -> LEAD observations; scope_distance kept as attribute; data/data_json inert.",
+   "status": "NOT_STARTED",
+   "effort": "S",
+   "artex_wave": "C",
+   "master_wave": 8,
+   "depends_on": "",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R17",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "nmap -oX file import",
+   "what": "Reuse the sensor XML normaliser + service_observations minter; lead-only; item cap + truncation reporting.",
+   "status": "NOT_STARTED",
+   "effort": "S",
+   "artex_wave": "C",
+   "master_wave": 8,
+   "depends_on": "",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R18",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "HAR import/export",
+   "what": "Import as a passive Tier-1 sensor (GROUNDING_INTEL, out-of-scope hosts dropped); export evidence exchanges redacted, each entry carrying action_id/cert digest.",
+   "status": "NOT_STARTED",
+   "effort": "S",
+   "artex_wave": "C",
+   "master_wave": 8,
+   "depends_on": "R02",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R19",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "Declarative request-rewrite rules (request phase only)",
+   "what": "No hook VM; rules applied inside VIGIL's gated send path, WARDEN-gated, default-OFF; rule id+digest recorded; any response-rewritten exchange ineligible for minting.",
+   "status": "NOT_STARTED",
+   "effort": "M",
+   "artex_wave": "E",
+   "master_wave": 8,
+   "depends_on": "",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R20",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "WebSocket/SSE frame recording",
+   "what": "Ordered bounded frames artifact per stream in the action evidence dir (manifest-hashed); no separate store.",
+   "status": "NOT_STARTED",
+   "effort": "S",
+   "artex_wave": "C",
+   "master_wave": 8,
+   "depends_on": "R02",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R21",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "SOCKS5 CONNECT front end",
+   "what": "Default-OFF, calls the same authorize(); UDP ASSOCIATE stays refused; metadata-only until the capture index exists.",
+   "status": "NOT_STARTED",
+   "effort": "M",
+   "artex_wave": "E",
+   "master_wave": 8,
+   "depends_on": "R02",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R22",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "Idle-turn nudge",
+   "what": "Detect a no-action/no-text think turn, re-prompt once (cap ~2), suppress on provider refusal, then ASK_USER; bounded by budget + watchdog.",
+   "status": "NOT_STARTED",
+   "effort": "S",
+   "artex_wave": "E",
+   "master_wave": 8,
+   "depends_on": "",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  },
+  {
+   "id": "R23",
+   "project": "VIGIL (ARTEX gap closure)",
+   "name": "LLM backend health memory",
+   "what": "In-process cooldown per backend that reorders permitted_preference(); re-asserts sovereignty; never leaves the tier; advisory only.",
+   "status": "NOT_STARTED",
+   "effort": "S",
+   "artex_wave": "E",
+   "master_wave": 8,
+   "depends_on": "",
+   "owner_input": "None",
+   "owner_first": false,
+   "source": "~/.claude/plans/artex-gap-analysis.md \u00a73"
+  }
+ ],
+ "artex_not_adopted": [
+  "Ungoverned Kali-Bash worker",
+  "LLM-mandatory mode (keep the keyless DryRun)",
+  "TLS MITM on the containment plane",
+  "Response rewriting that can reach an oracle",
+  "UDP egress (SOCKS5 UDP ASSOCIATE)",
+  "Authorization from declared scope rules",
+  "ICP-licence scope rules",
+  "Keyword scope rules"
+ ],
+ "apex_items": [
+  {
+   "id": "AP01",
+   "name": "APEX enablement path in deploy env + runbook",
+   "what": "Add every APEX flag (autonomous, oob, impact, presentation, consumer surfaces) to customer.env.example + cockpit.env.example (identical on both planes), to OWNER-SWITCHES.md, and an APEX enablement page in GO-LIVE-quickstart.md. Today there is NO supported way to turn APEX on.",
+   "effort": "S",
+   "severity": "HIGH",
+   "gap_ref": [
+    "no-enable-path"
+   ],
+   "depends_on": [],
+   "owner_input": "Decide which APEX layers launch (engine autonomy / OOB-first / impact-closure) and which consumer surfaces (posture, attack-path, blind-vuln, retest).",
+   "covered_by_running_work": "No",
+   "verified": "CONFIRMED \u2014 grep VIGIL_APEX over all *.env.example, infra/systemd/*, docs/runbooks/* returns zero hits."
+  },
+  {
+   "id": "AP02",
+   "name": "Production driver for PCR close-the-loop",
+   "what": "Build a sovereign CLI subcommand + systemd/worker that injects governance signers, GitHub App material, the m-of-n destruction quorum and the patched-build redrive into remediation.apex_pcr.close_remediation_loop, so a confirmed FACT drives a gated fix PR + signed negative certificate. Today the capability is a library with no caller outside tests.",
+   "effort": "L",
+   "severity": "HIGH",
+   "gap_ref": [
+    "pcr-no-driver"
+   ],
+   "depends_on": [
+    "AP01"
+   ],
+   "owner_input": "Supply target repo/branch + governance signer quorum; approve opening real fix PRs (m-of-n), since the PR leg touches a target repo.",
+   "covered_by_running_work": "No",
+   "verified": "CONFIRMED \u2014 grep close_remediation_loop: only its own def + __all__ in apex_pcr.py; zero callers in cli.py/jobs/ui."
+  },
+  {
+   "id": "AP03",
+   "name": "Production ticker for continuous retest scheduler",
+   "what": "Add a cadence job (systemd oneshot+timer mirroring vigil-reprove) that loads a persisted RetestRegistry, populates it from confirmed findings, injects redpen_fix.refire_reproduction as refire, calls jobs.apex_retest_scheduler.run_cadence_tick on a cadence, and surfaces reopened findings to the operator. Today nothing ticks it.",
+   "effort": "M",
+   "severity": "HIGH",
+   "gap_ref": [
+    "retest-no-ticker"
+   ],
+   "depends_on": [
+    "AP01"
+   ],
+   "owner_input": "Decide the cadence and where the registry file lives; approve enabling the timer and VIGIL_APEX_IMPACT.",
+   "covered_by_running_work": "No",
+   "verified": "CONFIRMED \u2014 grep run_cadence_tick: zero non-test callers; the existing vigil-reprove.timer drives a different (TRUTHENOVATION A2) path."
+  },
+  {
+   "id": "AP04",
+   "name": "Provision a public OOB collector host",
+   "what": "Stand up a public TLS reverse proxy fronting the loopback relay (advertise_url); an owner-owned domain delegated (NS) to the DNS collector bound on routable :53; set CRUCIBLE_OOB_RELAY_SECRET + LiveConfig oob_enable/oob_relay_host/oob_advertise_base_url; run the owner-signed `vigil provision` to pin the collector pubkey into the engagement authority; write an OOB-collector runbook. Without it, every blind-SSRF/SSTI claim fail-closes to a LEAD.",
+   "effort": "M",
+   "severity": "HIGH",
+   "gap_ref": [
+    "oob-collector-not-provisioned"
+   ],
+   "depends_on": [],
+   "owner_input": "Provide the public collector host, a dedicated DNS name + delegated base domain, open :53 and the TLS port, and run the governance-signed provision ceremony. (The plan already names this as an owner input, but it is not in any deploy artifact or runbook.)",
+   "covered_by_running_work": "No",
+   "verified": "CONFIRMED \u2014 oob_collaborator.py:14-26 '127.0.0.1 ONLY', remote arm GUIDE-ONLY; dns_collector.py needs an owner-owned nameserver; no deploy/runbook coverage."
+  },
+  {
+   "id": "AP05",
+   "name": "Unify the VIGIL_APEX_IMPACT flag reader",
+   "what": "Make sigil.config.apex_impact_enabled delegate to vigil_integration.apex_flags.apex_impact_enabled (one shared reader, fail-closed on ImportError), OR align the truthy sets. Today the sovereign reader accepts 'enabled' (5-element set) while the engine + integration readers do not (4-element set), so VIGIL_APEX_IMPACT=enabled reads ON on one plane, OFF on the other. Latent now (no live sovereign caller); becomes a real split the moment the sovereign reader is wired.",
+   "effort": "S",
+   "severity": "MEDIUM",
+   "gap_ref": [
+    "impact-flag-divergence"
+   ],
+   "depends_on": [],
+   "owner_input": "Decide whether to land the consumer-E fix or patch the divergence directly on main before any sovereign-plane consumer ships.",
+   "covered_by_running_work": "YES \u2014 the written fix exists on an unmerged commit (e093e163) that is part of the consumer-E fix round. Landing that round closes this.",
+   "verified": "CONFIRMED \u2014 config.py:1248 _OIDC_AFFIRMATIVE has 'enabled'; apex_flags.py:15 and apex_impact.py:37 _TRUTHY do not; config.apex_impact_enabled has no live caller on main."
+  },
+  {
+   "id": "AP06",
+   "name": "Driver resume durability",
+   "what": "On --resume the autonomous driver is skipped (no open executor) and its oracle-confirmed findings are never re-persisted (report is persisted at scan-complete, before the driver folds its findings), so a resumed run loses them. Either re-snapshot the report after the driver folds, or re-run the driver over a reopened executor, or explicitly document the driver as non-resumable.",
+   "effort": "M",
+   "severity": "MEDIUM",
+   "gap_ref": [
+    "resume-loses-driver-findings"
+   ],
+   "depends_on": [],
+   "owner_input": "Decide the intended resume semantics: recover-and-skip (re-persist), re-run on resume, or documented non-resumable.",
+   "covered_by_running_work": "No",
+   "verified": "CONFIRMED (code path) \u2014 engage.py:1994-1997 skips the driver on resume; persist_report at :1965 only (scan-complete), no re-persist after the driver block. Runtime loss is INFERRED from the code, not re-executed."
+  },
+  {
+   "id": "AP07",
+   "name": "Owner-gated customer-path driver wiring",
+   "what": "The customer launch worker reaches run_engagement, but the flag is wired into no deploy env / UI / launch gate, and the separate live/engine.py 'unified OODA engine' never runs the APEX driver. If hosted customers should ever run it, add explicit owner-gated deploy-env + launch-gate wiring (consistent with VIGIL_CUSTOMER_PROD_EXECUTION) and a test. Otherwise document the operator/CLI-only boundary.",
+   "effort": "M",
+   "severity": "MEDIUM",
+   "gap_ref": [
+    "customer-path-dark"
+   ],
+   "depends_on": [
+    "AP01"
+   ],
+   "owner_input": "Confirm whether PR-1 is operator/CLI-only for now, or whether hosted customers should run the autonomous driver (owner-gated at go-live).",
+   "covered_by_running_work": "No",
+   "verified": "CONFIRMED \u2014 engage_worker.py:456-460 _default_run_engagement->run_engagement; live/engine.py:258-272 is a separate engine; no VIGIL_APEX wiring in deploy/custui."
+  },
+  {
+   "id": "AP08",
+   "name": "Widen the autonomous discovery arsenal",
+   "what": "The in-band discovery probe is 5 near-zero-FP checks (XSS/open-redirect/path-traversal/SSTI x2). SQLi is excluded (single-shot FP) and OOB (SSRF/XXE/RCE) self-skips without a receiver. So injection/ssrf-oob/auth/access-control/business-logic/exploit-chain only get exercised on REVERIFY of scan findings, not fresh discovery. Add SPRT-gated boolean-SQLi discovery and OOB discovery (once AP04 lands) to light up the starved surface domains.",
+   "effort": "L",
+   "severity": "MEDIUM",
+   "gap_ref": [
+    "arsenal-5-checks"
+   ],
+   "depends_on": [
+    "AP04"
+   ],
+   "owner_input": "Confirm the intended division of labor: PR-1 discovers only the 5 in-band classes; OOB/SQLi discovery arrives via PR-2 provisioning + future SPRT work.",
+   "covered_by_running_work": "No",
+   "verified": "CONFIRMED \u2014 builtin.py:213-236 curated_probe_checks returns exactly 5 checks; SQLi + OOB deliberately excluded (documented)."
+  },
+  {
+   "id": "AP09",
+   "name": "Wire the in-engagement live-impact arm for authorized prod",
+   "what": "engage calls pursue_impact with no gate and no live_prover, so in production chaining-to-impact is offline oracle re-fire only; the live data-access/privesc/ATO demonstration runs only in tests. If live impact pursuit is intended in prod, add an authorized prod-execution caller that injects build_offense_gate + a real live_prover; otherwise state explicitly that in-engagement impact is offline-re-fire-only.",
+   "effort": "M",
+   "severity": "MEDIUM",
+   "gap_ref": [
+    "live-impact-arm-test-only"
+   ],
+   "depends_on": [],
+   "owner_input": "Owner approval + prod-execution authority (VIGIL_CUSTOMER_PROD_EXECUTION + signed charter) before any live impact pursuit touches a target.",
+   "covered_by_running_work": "No",
+   "verified": "CONFIRMED \u2014 engage.py:2049-2053 calls pursue_impact with no gate=/live_prover=; apex_impact.py:170-172 takes the live arm only when both are injected."
+  },
+  {
+   "id": "AP10",
+   "name": "Reconcile Gate-5 sign-off with the shipped config",
+   "what": "The owner's Gate-5 E2E walk turns the presentation surfaces ON (posture + presentation; attack-path/blind-vuln), but customer.env.example ships them OFF, so a green Gate-5 does not reflect what the hosted launch serves. Either ship the surfaces on (set the flags in both env files) and re-run Gate-5 against the real go-live env, or scope Gate-5 to the shipped (off) config.",
+   "effort": "S",
+   "severity": "MEDIUM",
+   "gap_ref": [
+    "gate5-diverges"
+   ],
+   "depends_on": [
+    "AP01"
+   ],
+   "owner_input": "Confirm whether Fix-first / Attack-path / Retest are part of the launch surface.",
+   "covered_by_running_work": "No",
+   "verified": "CONFIRMED \u2014 test_gate5_customer_e2e.py:167,177 enables posture/attackPath/blindVuln/VIGIL_APEX_PRESENTATION; customer.env.example has none of them."
+  },
+  {
+   "id": "AP11",
+   "name": "Master VIGIL_APEX_ENABLED kill-switch (or record the decision)",
+   "what": "Appendix Z specified a master VIGIL_APEX_ENABLED (default OFF) ANDed into each sub-flag. It was never implemented; only independent sub-flags exist, so there is no single off-switch for the whole program. Either implement it or update the plan to record that the design settled on independent sub-flags.",
+   "effort": "S",
+   "severity": "LOW",
+   "gap_ref": [
+    "no-master-flag"
+   ],
+   "depends_on": [],
+   "owner_input": "Confirm whether a single master kill-switch is wanted for operations.",
+   "covered_by_running_work": "No",
+   "verified": "CONFIRMED \u2014 grep VIGIL_APEX_ENABLED across .py/.md/.example returns zero hits."
+  },
+  {
+   "id": "AP12",
+   "name": "Refresh V2-LIMITATIONS and add an APEX residuals section",
+   "what": "V2-LIMITATIONS.md section 31 still calls the nosqli/ldap/xpath datastore_error branches 'LEAD-only (fact_capable: false)', but #1182 promoted them to fact_capable=true via the parser-state-toggle oracle. Rewrite section 31, and add an APEX residuals section (public-collector provisioning, test-only PCR/retest drivers, flag divergence) so an auditor is not misled.",
+   "effort": "S",
+   "severity": "LOW",
+   "gap_ref": [
+    "limitations-stale",
+    "residuals-undocumented"
+   ],
+   "depends_on": [],
+   "owner_input": "None.",
+   "covered_by_running_work": "No",
+   "verified": "CONFIRMED \u2014 V2-LIMITATIONS.md:1407-1442 says LEAD-only; evidence-branches.json:2261/2319/2377 all fact_capable=true."
+  },
+  {
+   "id": "AP13",
+   "name": "Render impact_report in reports/UI",
+   "what": "EngagementResult.impact_report is computed but surfaced nowhere \u2014 no report renderer or UI consumes it, so the demonstrated-impact deliverable is invisible to the operator. Render demonstrated paths, terminal_impact, foothold_findings and authorization in the technical/engagement report and/or a UI panel.",
+   "effort": "S",
+   "severity": "LOW",
+   "gap_ref": [
+    "impact-report-invisible"
+   ],
+   "depends_on": [],
+   "owner_input": "None.",
+   "covered_by_running_work": "No",
+   "verified": "Reported by area audit (grep: only producer, no reader). Not independently re-verified beyond the audit grep \u2014 LOW."
+  },
+  {
+   "id": "AP14",
+   "name": "Range-backed MERIDIAN e2e acceptance",
+   "what": "The committed PR-1 e2e acceptance runs against a loopback pytest_httpserver, not the MERIDIAN range the plan names. The promote->crawl->probe->oracle chain is faithful and the capability is demonstrated end-to-end on an equivalent target. Add a MERIDIAN-range-backed e2e, or amend the plan to accept the loopback-equivalent as the acceptance surface.",
+   "effort": "S",
+   "severity": "LOW",
+   "gap_ref": [
+    "acceptance-loopback-not-range"
+   ],
+   "depends_on": [],
+   "owner_input": "Confirm whether the loopback-equivalent is an acceptable stand-in for the MERIDIAN acceptance, or a range-backed e2e is required.",
+   "covered_by_running_work": "No",
+   "verified": "Reported by area audit (test header 'Loopback pytest_httpserver only'). LOW."
+  },
+  {
+   "id": "AP15",
+   "name": "Reconcile customer-facing copy with shipped flags",
+   "what": "Add when-gates to the in-app Guide steps (attackpath/retest/OOB-badge) so the Guide matches the served surface, and review public-site 'autonomous pentesting engine' / 'verified fix suggestions' copy against the shipped defaults. Either enable the capabilities or soften the copy (e.g. 'autonomous OODA available / opt-in').",
+   "effort": "S",
+   "severity": "LOW",
+   "gap_ref": [
+    "guide-points-to-off-controls",
+    "marketing-overclaims"
+   ],
+   "depends_on": [],
+   "owner_input": "None if the flags are enabled; otherwise approve the one-line guide gating fix + copy softening.",
+   "covered_by_running_work": "No",
+   "verified": "Reported by area audit (guide.js steps lack when-gates; public_site/index.html claims). LOW."
+  },
+  {
+   "id": "AP16",
+   "project": "VIGIL (red-pen GitHub App)",
+   "name": "Wire the check_run/check_suite re-run handler",
+   "what": "The 'VIGIL Red-Pen' GitHub App now subscribes to check_run + check_suite (owner enabled 2026-11-24). Add the inbound webhook handler (gated by VIGIL_REDPEN_ENABLED, HMAC-verified with VIGIL_GH_WEBHOOK_SECRET) that, on a 'rerequested' check_run/check_suite for the VIGIL Red-Pen check, re-enqueues a review for that PR head and re-drains a fresh check. Today only post/patch exists; no rerequest handler. Keep fail-closed; a rerequest never bypasses the FACT-only decision.",
+   "status": "NOT_STARTED",
+   "effort": "S",
+   "depends_on": [
+    "V07 (consumer E red-pen pipeline)"
+   ],
+   "owner_input": "None",
+   "source": "owner request 2026-11-24; folds into the red-pen build"
+  }
+ ],
+ "apex_launch_decisions_2026_11_24": {
+  "layers": "all three (driver + OOB-first + impact/PCR/continuous-retest)",
+  "impact": "re-check only at launch (offline re-fire); live impact AP09 owner-gated later",
+  "oob_collector_host": "oob.vigilguard.net (subdomain, same AWS box, DNS on deploy day)",
+  "master_killswitch": "yes \u2014 add VIGIL_APEX_ENABLED ANDed into every sub-flag (AP11)"
+ },
+ "redpen_golive_items": [
+  {
+   "id": "RP01",
+   "name": "Hooks edge forwards POST /webhooks/github-app",
+   "what": "Add a third byte-exact POST-only route to vigil-hooks.nginx.conf, vigil-hooks.Caddyfile, infra/edge/Caddyfile.example; extend test_hooks_webhook_edge.py WEBHOOKS (+ resolve _GH_APP_WEBHOOK_PATH, proxy_pass count 3; /webhooks/github stays 404); AWS-DEPLOY + GO-LIVE say three routes + add the path to the Cloudflare WAF skip rule.",
+   "effort": "S",
+   "branch": "main (independent)",
+   "status": "NOT_STARTED",
+   "source": "~/.claude/plans/redpen-github-app-audit.md + wf_c0b97393-8a0 area audits"
+  },
+  {
+   "id": "RP02",
+   "name": "App private key: SSM reader accepts a multi-line PEM",
+   "what": "vigil_core.aws_ssm.read_secure_string rejects values that are not one line (aws_ssm.py:83) and parses --output text, so /vigil/gh-app-private-key (a PEM) fails closed. Give github_app._private_key a PEM-aware SSM read (--output json, keep fail-closed + never logged) with tests incl. a negative control.",
+   "effort": "S",
+   "branch": "main (independent)",
+   "status": "NOT_STARTED",
+   "source": "~/.claude/plans/redpen-github-app-audit.md + wf_c0b97393-8a0 area audits"
+  },
+  {
+   "id": "RP03",
+   "name": "Webhook secret delivery to the proxy",
+   "what": "uiproxy reads VIGIL_GH_WEBHOOK_SECRET only from its own env (service.env); no SSM reader. Add a boot oneshot/ExecStartPre that loads /vigil/gh-webhook-secret into the proxy env (no plaintext file), or document service.env + cockpit.env placement; doctor must check the PROXY env.",
+   "effort": "S",
+   "branch": "main",
+   "status": "NOT_STARTED",
+   "source": "~/.claude/plans/redpen-github-app-audit.md + wf_c0b97393-8a0 area audits"
+  },
+  {
+   "id": "RP04",
+   "name": "Red-Pen env + units + IAM in code",
+   "what": "Env examples + runbook for VIGIL_REDPEN_ENABLED (proxy, cockpit, customer, offense workers), VIGIL_GH_WEBHOOK_SPOOL, VIGIL_GITHUB_APP_ID=5804935, VIGIL_GITHUB_APP_SLUG=vigil-red-pen, VIGIL_GITHUB_APP_PRIVATE_KEY_SSM=/vigil/gh-app-private-key, VIGIL_AWS_REGION; fix E's placeholder path /vigil/github-app/private-key; systemd units for redpen-webhook-drain + redpen-review with a dedicated --queue-root; provision.sh grants the 5 /vigil/ ARNs.",
+   "effort": "S/M",
+   "branch": "after E merges",
+   "status": "NOT_STARTED",
+   "source": "~/.claude/plans/redpen-github-app-audit.md + wf_c0b97393-8a0 area audits"
+  },
+  {
+   "id": "RP05",
+   "name": "Repo connect verifier",
+   "what": "installation_verifier is never injected, so every install callback returns verification_required and no connected-repo record is ever made. Wire an OAuth verifier (client id/secret in SSM, GET /user/installations) or an owner-only `sigil redpen connect <org> <installation_id>`. Owner then sets Setup URL https://app.vigilguard.net/api/customer/code/connected + Redirect on update + OAuth during install.",
+   "effort": "M",
+   "branch": "after E",
+   "status": "NOT_STARTED",
+   "source": "~/.claude/plans/redpen-github-app-audit.md + wf_c0b97393-8a0 area audits"
+  },
+  {
+   "id": "RP06",
+   "name": "Review execution live path",
+   "what": "redpen-review reserve is hard-wired to refuse, reviewer proposes nothing, clone/comment use a PAT: sovereign reserve publisher, live reviewer, installation-token broker, repo-slug authority (HANDOFF O-6 live-flip items).",
+   "effort": "L",
+   "branch": "after RP05",
+   "status": "NOT_STARTED",
+   "source": "~/.claude/plans/redpen-github-app-audit.md + wf_c0b97393-8a0 area audits"
+  },
+  {
+   "id": "RP07",
+   "name": "Check writer posts a check for refused reviews",
+   "what": "A refused webhook review has empty org_id and redpen_check.py:184 (E) rejects it, so no check at all appears; resolve the org sovereign-side by repo (or carry it) so a neutral check is written.",
+   "effort": "S",
+   "branch": "in E (before merge)",
+   "status": "NOT_STARTED",
+   "source": "~/.claude/plans/redpen-github-app-audit.md + wf_c0b97393-8a0 area audits"
+  },
+  {
+   "id": "RP08",
+   "name": "Least-privilege installation tokens",
+   "what": "mint_installation_token posts {} (all repos, all perms); mint with repositories=[repo] + permissions={checks: write} for the check write.",
+   "effort": "S",
+   "branch": "main",
+   "status": "NOT_STARTED",
+   "source": "~/.claude/plans/redpen-github-app-audit.md + wf_c0b97393-8a0 area audits"
+  },
+  {
+   "id": "RP09",
+   "name": "Installation webhooks reconcile disconnects",
+   "what": "installation deleted/suspend + installation_repositories removed must disconnect ConnectedRepoRegistry records (today acknowledged only).",
+   "effort": "M",
+   "branch": "after RP05",
+   "status": "NOT_STARTED",
+   "source": "~/.claude/plans/redpen-github-app-audit.md + wf_c0b97393-8a0 area audits"
+  },
+  {
+   "id": "RP10",
+   "name": "Doctor covers the Red-Pen chain",
+   "what": "vigil doctor (proxy env: flag+spool+secret together, spool draining) and sigil doctor (JWT build without egress = SSM read + PEM parse, slug).",
+   "effort": "S",
+   "branch": "after RP02/RP04",
+   "status": "NOT_STARTED",
+   "source": "~/.claude/plans/redpen-github-app-audit.md + wf_c0b97393-8a0 area audits"
+  }
+ ],
+ "pay_login_hardening": {
+  "id": "PL01",
+  "status": "BUILDING",
+  "workflow": "wf_82f1e175-00f",
+  "branch": "claude/pay-login-hardening",
+  "worktree": "/home/kali/vigil-wt-pay-login",
+  "findings": "~/.claude/plans/login-and-double-pay-verification.md",
+  "proven_ok": [
+   "login lockout 5 fails/15 min -> 1 min doubling to 1 h; right password refused while locked; other customers unaffected",
+   "pack double click -> one Stripe page; one payment credited once",
+   "plan 2-8 clicks/tabs -> one subscription; repeated invoice.paid credits once",
+   "auto top-up concurrent triggers -> one charge"
+  ],
+  "gaps": [
+   "HIGH second plan sold after period_end while old sub still renews/retries",
+   "HIGH Caddy example + Cloudflare Tunnel lose real client IP (all = 127.0.0.1)",
+   "MEDIUM login per-IP counter cleared on success; IPv6 per-address; full store stops counting",
+   "LOW known email kept locked even after reset",
+   "LOW auto top-up 409 shown as failed after charging",
+   "LOW TOTP limiter off by default"
+  ]
+ }
+}

@@ -1,0 +1,258 @@
+{
+  "program": "APEX — the Autonomous Sovereign Pentester",
+  "generated": "2026-11-24",
+  "source": "synthesis of 4 area audits, every HIGH/MEDIUM gap re-verified by reading cited code on main @ dceea03a (read-only worktree /home/kali/vigil-wt-apex-audit)",
+  "note": "All 5 APEX PRs are MERGED and in main. Everything below is default-OFF and undriven in the shipped config. No code was modified by this audit.",
+  "items": [
+    {
+      "id": "AP01",
+      "name": "APEX enablement path in deploy env + runbook",
+      "what": "Add every APEX flag (autonomous, oob, impact, presentation, consumer surfaces) to customer.env.example + cockpit.env.example (identical on both planes), to OWNER-SWITCHES.md, and an APEX enablement page in GO-LIVE-quickstart.md. Today there is NO supported way to turn APEX on.",
+      "effort": "S",
+      "severity": "HIGH",
+      "gap_ref": ["no-enable-path"],
+      "depends_on": [],
+      "owner_input": "Decide which APEX layers launch (engine autonomy / OOB-first / impact-closure) and which consumer surfaces (posture, attack-path, blind-vuln, retest).",
+      "covered_by_running_work": "No",
+      "verified": "CONFIRMED — grep VIGIL_APEX over all *.env.example, infra/systemd/*, docs/runbooks/* returns zero hits."
+    },
+    {
+      "id": "AP02",
+      "name": "Production driver for PCR close-the-loop",
+      "what": "Build a sovereign CLI subcommand + systemd/worker that injects governance signers, GitHub App material, the m-of-n destruction quorum and the patched-build redrive into remediation.apex_pcr.close_remediation_loop, so a confirmed FACT drives a gated fix PR + signed negative certificate. Today the capability is a library with no caller outside tests.",
+      "effort": "L",
+      "severity": "HIGH",
+      "gap_ref": ["pcr-no-driver"],
+      "depends_on": ["AP01"],
+      "owner_input": "Supply target repo/branch + governance signer quorum; approve opening real fix PRs (m-of-n), since the PR leg touches a target repo.",
+      "covered_by_running_work": "No",
+      "verified": "CONFIRMED — grep close_remediation_loop: only its own def + __all__ in apex_pcr.py; zero callers in cli.py/jobs/ui."
+    },
+    {
+      "id": "AP03",
+      "name": "Production ticker for continuous retest scheduler",
+      "what": "Add a cadence job (systemd oneshot+timer mirroring vigil-reprove) that loads a persisted RetestRegistry, populates it from confirmed findings, injects redpen_fix.refire_reproduction as refire, calls jobs.apex_retest_scheduler.run_cadence_tick on a cadence, and surfaces reopened findings to the operator. Today nothing ticks it.",
+      "effort": "M",
+      "severity": "HIGH",
+      "gap_ref": ["retest-no-ticker"],
+      "depends_on": ["AP01"],
+      "owner_input": "Decide the cadence and where the registry file lives; approve enabling the timer and VIGIL_APEX_IMPACT.",
+      "covered_by_running_work": "No",
+      "verified": "CONFIRMED — grep run_cadence_tick: zero non-test callers; the existing vigil-reprove.timer drives a different (TRUTHENOVATION A2) path."
+    },
+    {
+      "id": "AP04",
+      "name": "Provision a public OOB collector host",
+      "what": "Stand up a public TLS reverse proxy fronting the loopback relay (advertise_url); an owner-owned domain delegated (NS) to the DNS collector bound on routable :53; set CRUCIBLE_OOB_RELAY_SECRET + LiveConfig oob_enable/oob_relay_host/oob_advertise_base_url; run the owner-signed `vigil provision` to pin the collector pubkey into the engagement authority; write an OOB-collector runbook. Without it, every blind-SSRF/SSTI claim fail-closes to a LEAD.",
+      "effort": "M",
+      "severity": "HIGH",
+      "gap_ref": ["oob-collector-not-provisioned"],
+      "depends_on": [],
+      "owner_input": "Provide the public collector host, a dedicated DNS name + delegated base domain, open :53 and the TLS port, and run the governance-signed provision ceremony. (The plan already names this as an owner input, but it is not in any deploy artifact or runbook.)",
+      "covered_by_running_work": "No",
+      "verified": "CONFIRMED — oob_collaborator.py:14-26 '127.0.0.1 ONLY', remote arm GUIDE-ONLY; dns_collector.py needs an owner-owned nameserver; no deploy/runbook coverage."
+    },
+    {
+      "id": "AP05",
+      "name": "Unify the VIGIL_APEX_IMPACT flag reader",
+      "what": "Make sigil.config.apex_impact_enabled delegate to vigil_integration.apex_flags.apex_impact_enabled (one shared reader, fail-closed on ImportError), OR align the truthy sets. Today the sovereign reader accepts 'enabled' (5-element set) while the engine + integration readers do not (4-element set), so VIGIL_APEX_IMPACT=enabled reads ON on one plane, OFF on the other. Latent now (no live sovereign caller); becomes a real split the moment the sovereign reader is wired.",
+      "effort": "S",
+      "severity": "MEDIUM",
+      "gap_ref": ["impact-flag-divergence"],
+      "depends_on": [],
+      "owner_input": "Decide whether to land the consumer-E fix or patch the divergence directly on main before any sovereign-plane consumer ships.",
+      "covered_by_running_work": "YES — the written fix exists on an unmerged commit (e093e163) that is part of the consumer-E fix round. Landing that round closes this.",
+      "verified": "CONFIRMED — config.py:1248 _OIDC_AFFIRMATIVE has 'enabled'; apex_flags.py:15 and apex_impact.py:37 _TRUTHY do not; config.apex_impact_enabled has no live caller on main."
+    },
+    {
+      "id": "AP06",
+      "name": "Driver resume durability",
+      "what": "On --resume the autonomous driver is skipped (no open executor) and its oracle-confirmed findings are never re-persisted (report is persisted at scan-complete, before the driver folds its findings), so a resumed run loses them. Either re-snapshot the report after the driver folds, or re-run the driver over a reopened executor, or explicitly document the driver as non-resumable.",
+      "effort": "M",
+      "severity": "MEDIUM",
+      "gap_ref": ["resume-loses-driver-findings"],
+      "depends_on": [],
+      "owner_input": "Decide the intended resume semantics: recover-and-skip (re-persist), re-run on resume, or documented non-resumable.",
+      "covered_by_running_work": "No",
+      "verified": "CONFIRMED (code path) — engage.py:1994-1997 skips the driver on resume; persist_report at :1965 only (scan-complete), no re-persist after the driver block. Runtime loss is INFERRED from the code, not re-executed."
+    },
+    {
+      "id": "AP07",
+      "name": "Owner-gated customer-path driver wiring",
+      "what": "The customer launch worker reaches run_engagement, but the flag is wired into no deploy env / UI / launch gate, and the separate live/engine.py 'unified OODA engine' never runs the APEX driver. If hosted customers should ever run it, add explicit owner-gated deploy-env + launch-gate wiring (consistent with VIGIL_CUSTOMER_PROD_EXECUTION) and a test. Otherwise document the operator/CLI-only boundary.",
+      "effort": "M",
+      "severity": "MEDIUM",
+      "gap_ref": ["customer-path-dark"],
+      "depends_on": ["AP01"],
+      "owner_input": "Confirm whether PR-1 is operator/CLI-only for now, or whether hosted customers should run the autonomous driver (owner-gated at go-live).",
+      "covered_by_running_work": "No",
+      "verified": "CONFIRMED — engage_worker.py:456-460 _default_run_engagement->run_engagement; live/engine.py:258-272 is a separate engine; no VIGIL_APEX wiring in deploy/custui."
+    },
+    {
+      "id": "AP08",
+      "name": "Widen the autonomous discovery arsenal",
+      "what": "The in-band discovery probe is 5 near-zero-FP checks (XSS/open-redirect/path-traversal/SSTI x2). SQLi is excluded (single-shot FP) and OOB (SSRF/XXE/RCE) self-skips without a receiver. So injection/ssrf-oob/auth/access-control/business-logic/exploit-chain only get exercised on REVERIFY of scan findings, not fresh discovery. Add SPRT-gated boolean-SQLi discovery and OOB discovery (once AP04 lands) to light up the starved surface domains.",
+      "effort": "L",
+      "severity": "MEDIUM",
+      "gap_ref": ["arsenal-5-checks"],
+      "depends_on": ["AP04"],
+      "owner_input": "Confirm the intended division of labor: PR-1 discovers only the 5 in-band classes; OOB/SQLi discovery arrives via PR-2 provisioning + future SPRT work.",
+      "covered_by_running_work": "No",
+      "verified": "CONFIRMED — builtin.py:213-236 curated_probe_checks returns exactly 5 checks; SQLi + OOB deliberately excluded (documented)."
+    },
+    {
+      "id": "AP09",
+      "name": "Wire the in-engagement live-impact arm for authorized prod",
+      "what": "engage calls pursue_impact with no gate and no live_prover, so in production chaining-to-impact is offline oracle re-fire only; the live data-access/privesc/ATO demonstration runs only in tests. If live impact pursuit is intended in prod, add an authorized prod-execution caller that injects build_offense_gate + a real live_prover; otherwise state explicitly that in-engagement impact is offline-re-fire-only.",
+      "effort": "M",
+      "severity": "MEDIUM",
+      "gap_ref": ["live-impact-arm-test-only"],
+      "depends_on": [],
+      "owner_input": "Owner approval + prod-execution authority (VIGIL_CUSTOMER_PROD_EXECUTION + signed charter) before any live impact pursuit touches a target.",
+      "covered_by_running_work": "No",
+      "verified": "CONFIRMED — engage.py:2049-2053 calls pursue_impact with no gate=/live_prover=; apex_impact.py:170-172 takes the live arm only when both are injected."
+    },
+    {
+      "id": "AP10",
+      "name": "Reconcile Gate-5 sign-off with the shipped config",
+      "what": "The owner's Gate-5 E2E walk turns the presentation surfaces ON (posture + presentation; attack-path/blind-vuln), but customer.env.example ships them OFF, so a green Gate-5 does not reflect what the hosted launch serves. Either ship the surfaces on (set the flags in both env files) and re-run Gate-5 against the real go-live env, or scope Gate-5 to the shipped (off) config.",
+      "effort": "S",
+      "severity": "MEDIUM",
+      "gap_ref": ["gate5-diverges"],
+      "depends_on": ["AP01"],
+      "owner_input": "Confirm whether Fix-first / Attack-path / Retest are part of the launch surface.",
+      "covered_by_running_work": "No",
+      "verified": "CONFIRMED — test_gate5_customer_e2e.py:167,177 enables posture/attackPath/blindVuln/VIGIL_APEX_PRESENTATION; customer.env.example has none of them."
+    },
+    {
+      "id": "AP11",
+      "name": "Master VIGIL_APEX_ENABLED kill-switch (or record the decision)",
+      "what": "Appendix Z specified a master VIGIL_APEX_ENABLED (default OFF) ANDed into each sub-flag. It was never implemented; only independent sub-flags exist, so there is no single off-switch for the whole program. Either implement it or update the plan to record that the design settled on independent sub-flags.",
+      "effort": "S",
+      "severity": "LOW",
+      "gap_ref": ["no-master-flag"],
+      "depends_on": [],
+      "owner_input": "Confirm whether a single master kill-switch is wanted for operations.",
+      "covered_by_running_work": "No",
+      "verified": "CONFIRMED — grep VIGIL_APEX_ENABLED across .py/.md/.example returns zero hits."
+    },
+    {
+      "id": "AP12",
+      "name": "Refresh V2-LIMITATIONS and add an APEX residuals section",
+      "what": "V2-LIMITATIONS.md section 31 still calls the nosqli/ldap/xpath datastore_error branches 'LEAD-only (fact_capable: false)', but #1182 promoted them to fact_capable=true via the parser-state-toggle oracle. Rewrite section 31, and add an APEX residuals section (public-collector provisioning, test-only PCR/retest drivers, flag divergence) so an auditor is not misled.",
+      "effort": "S",
+      "severity": "LOW",
+      "gap_ref": ["limitations-stale", "residuals-undocumented"],
+      "depends_on": [],
+      "owner_input": "None.",
+      "covered_by_running_work": "No",
+      "verified": "CONFIRMED — V2-LIMITATIONS.md:1407-1442 says LEAD-only; evidence-branches.json:2261/2319/2377 all fact_capable=true."
+    },
+    {
+      "id": "AP13",
+      "name": "Render impact_report in reports/UI",
+      "what": "EngagementResult.impact_report is computed but surfaced nowhere — no report renderer or UI consumes it, so the demonstrated-impact deliverable is invisible to the operator. Render demonstrated paths, terminal_impact, foothold_findings and authorization in the technical/engagement report and/or a UI panel.",
+      "effort": "S",
+      "severity": "LOW",
+      "gap_ref": ["impact-report-invisible"],
+      "depends_on": [],
+      "owner_input": "None.",
+      "covered_by_running_work": "No",
+      "verified": "Reported by area audit (grep: only producer, no reader). Not independently re-verified beyond the audit grep — LOW."
+    },
+    {
+      "id": "AP14",
+      "name": "Range-backed MERIDIAN e2e acceptance",
+      "what": "The committed PR-1 e2e acceptance runs against a loopback pytest_httpserver, not the MERIDIAN range the plan names. The promote->crawl->probe->oracle chain is faithful and the capability is demonstrated end-to-end on an equivalent target. Add a MERIDIAN-range-backed e2e, or amend the plan to accept the loopback-equivalent as the acceptance surface.",
+      "effort": "S",
+      "severity": "LOW",
+      "gap_ref": ["acceptance-loopback-not-range"],
+      "depends_on": [],
+      "owner_input": "Confirm whether the loopback-equivalent is an acceptable stand-in for the MERIDIAN acceptance, or a range-backed e2e is required.",
+      "covered_by_running_work": "No",
+      "verified": "Reported by area audit (test header 'Loopback pytest_httpserver only'). LOW."
+    },
+    {
+      "id": "AP15",
+      "name": "Reconcile customer-facing copy with shipped flags",
+      "what": "Add when-gates to the in-app Guide steps (attackpath/retest/OOB-badge) so the Guide matches the served surface, and review public-site 'autonomous pentesting engine' / 'verified fix suggestions' copy against the shipped defaults. Either enable the capabilities or soften the copy (e.g. 'autonomous OODA available / opt-in').",
+      "effort": "S",
+      "severity": "LOW",
+      "gap_ref": ["guide-points-to-off-controls", "marketing-overclaims"],
+      "depends_on": [],
+      "owner_input": "None if the flags are enabled; otherwise approve the one-line guide gating fix + copy softening.",
+      "covered_by_running_work": "No",
+      "verified": "Reported by area audit (guide.js steps lack when-gates; public_site/index.html claims). LOW."
+    }
+  ],
+  "already_covered_elsewhere": [
+    {"item": "AP05", "by": "consumer-E fix round (unmerged commit e093e163 unifies the flag reader)"},
+    {"note": "Investigation graph program and AEGIS program do NOT cover any APEX item — they are separate workstreams."}
+  ],
+  "completeness_check_2026_11_24": {
+    "method": "Second-pass read-only audit of what the 4 area audits + synthesis never examined: every PR file-list item (#1181/#1182/#1185/#1184/#1183), every APEX env flag, the full APEX/OOB test set, docs/runbooks/*, and the customer screens. Same worktree /home/kali/vigil-wt-apex-audit @ dceea03a; PR file lists via gh. Nothing changed. No HIGH/MEDIUM finding was overturned.",
+    "new_or_corrections": [
+      {
+        "ref": "flag-not-listed",
+        "kind": "correction-to-section-3",
+        "summary": "VIGIL_APEX_MAX_CYCLES is an APEX env flag omitted from the §3 flag table.",
+        "detail": "Read at engage.py:120 (_apex_max_cycles), default 64 (_APEX_MAX_CYCLES_DEFAULT, engage.py:104), operator-tunable OODA-cycle bound. Only mentioned in checklist step 7. AP01 must enumerate it in the env for a reproducible runaway-loop bound.",
+        "evidence": "engine/crucible/framework/v2/engage.py:103-104,120",
+        "feeds": ["AP01"]
+      },
+      {
+        "ref": "customer-surfaces-omitted",
+        "kind": "correction-to-section-3-flag-list",
+        "summary": "Two APEX consumer surfaces missing from the §3 consumer-flag row: VIGIL_CUSTOMER_PROOF_BADGE (APEX PR-I) and VIGIL_CUSTOMER_FIX_IT.",
+        "detail": "PROOF_BADGE renders the 'Independently verifiable' per-finding badge + proof-bundle download (placeholder __VIGIL_PROOF_BADGE__ custui.py:276; route /api/customer/assessments/proof gated at server.py:726). FIX_IT (config.py:301) is the one-click gated fix-PR + signed NEGATIVE remediation cert button (the consumer trigger for close-the-loop; offense side re-checks VIGIL_REDPEN_ENABLED + owner-signed 'pr' grant, mints no fact). Both default OFF.",
+        "evidence": "apps/sigil/sigil/config.py:301,1871; apps/sigil/sigil/ui/custui.py:276; apps/sigil/sigil/ui/server.py:726",
+        "feeds": ["AP01", "AP10", "AP15"]
+      },
+      {
+        "ref": "env-example-presence",
+        "kind": "correction-to-section-3",
+        "summary": "PROOF_BADGE IS present (commented, OFF) in both env examples; the blanket 'no presentation flag in any deploy env' is not exact. H1 still stands (its literal claim is 0 VIGIL_APEX_ hits; PROOF_BADGE is VIGIL_CUSTOMER_).",
+        "evidence": "apps/sigil/deploy/customer.env.example:77; apps/sigil/deploy/cockpit.env.example:136",
+        "feeds": ["AP01"]
+      },
+      {
+        "ref": "impact-flag-divergence-refinement",
+        "kind": "refinement-to-M1-AP05",
+        "summary": "Verified all four APEX flags both planes: AUTONOMOUS (engage.py:103), OOB (runtime_redrive.py:391) and PRESENTATION (certify.py:191) all use the 5-value set matching sovereign _OIDC_AFFIRMATIVE. Only IMPACT's _TRUTHY (apex_flags.py:15, apex_impact.py:37) is 4-value. So M1 is correctly isolated to IMPACT, and IMPACT's ENGINE reader is the family outlier — the lowest-risk AP05 fix is to bring _TRUTHY UP to 5 values (add 'enabled'), not down-scope config.",
+        "evidence": "apps/sigil/sigil/config.py:1248; engine/crucible/framework/v2/engage.py:103; integration/vigil_integration/live/runtime_redrive.py:391; engine/crucible/framework/v2/evidence/certify.py:191; integration/vigil_integration/apex_flags.py:15; engine/crucible/framework/v2/apex_impact.py:37",
+        "feeds": ["AP05"]
+      },
+      {
+        "ref": "pcr-retest-test-count",
+        "kind": "correction-to-section-2",
+        "summary": "The PCR and retest libraries are NOT 'proven by one hermetic test each' — test_apex_pcr.py has 9 tests and test_apex_retest_scheduler.py has 8, with real negative controls (quorum-blocks, patched-build-not-certified, no-false-clear). H2/H3 (no production caller) are unchanged; the libraries are better-proven than §2 states.",
+        "evidence": "integration/tests/test_apex_pcr.py (9 def test_); integration/tests/test_apex_retest_scheduler.py (8 def test_)",
+        "feeds": ["AP02", "AP03"]
+      },
+      {
+        "ref": "customer-screen-pointer",
+        "kind": "correction-to-M3-L5",
+        "summary": "The APEX consumer screens are server-rendered in custui.py via __VIGIL_*__ placeholder substitution (__VIGIL_POSTURE__/RETEST/ATTACK_PATH/BLIND_VULN/PROOF_BADGE at custui.py:267-278) + route gates in server.py (/posture @1818, /proof @726). customer_app/app.js carries ZERO APEX content — citing it (M3/L5) points at the wrong file. Conclusion (surfaces default-OFF) unchanged; review target for L5 is custui.py.",
+        "evidence": "apps/sigil/sigil/ui/custui.py:267-278; apps/sigil/sigil/ui/server.py:726,1818; apps/sigil/customer_app/app.js (no APEX tokens)",
+        "feeds": ["AP07", "AP15"]
+      }
+    ],
+    "examination_gaps_closed_no_new_work": [
+      {
+        "ref": "1181-1182-producers-now-read",
+        "summary": "The #1181/#1182 pre-work producer files were never opened by the first pass; now read and OBSERVED real.",
+        "detail": "Strix->FACT rail: live/dom_redrive.py:1-14 (dom_execution oracle), live/transport_redrive.py:1-16 (VIGIL-own gated handshake), proof/run.py:1-12 (persisted proof record). Injection->FACT: verify/oracles.py:4484-4518 (BREAK-vs-REPAIR parser_state_toggle oracle) + verify/adapter.py:555-566,2748-2749. 7-surface decomposition: engage_surface_selectors.py:1-182 over planner/goal_tree.py. The oracles.py:4484 oracle is exactly what L2 says V2-LIMITATIONS §31 still mislabels LEAD-only."
+      },
+      {
+        "ref": "ci-wiring-verified",
+        "summary": "APEX tests ARE wired into CI (never checked by the first pass). ci.yml runs integration/tests + framework/v2 + apps/sigil/tests by directory under two coverage guards; none in a silent --ignore (injection_parity + oob_autonomous_feeder are ignore-then-run in a dedicated leg).",
+        "evidence": ".github/workflows/ci.yml:392-410,599-666; framework/v2/tests/test_ci_crucible_core_covers_all_suites.py; apps/sigil/tests/test_ci_suite_legs.py"
+      },
+      {
+        "ref": "oob-machinery-test-proven",
+        "summary": "H4 is a deployment-provisioning gap, not a code gap: the blind-SSRF/SSTI confirmation path is test-proven. The runbook 'out-of-band' hits are the trust-root GENESIS ceremony, not the APEX collector, confirming H4's 'no runbook coverage'.",
+        "evidence": "verify/tests/test_oob.py(15), test_oob_signed_window.py(6), test_oob_offline_reverify.py(8), scanner/tests/test_oob_producer.py(4), authority/tests/test_oob_egress.py(4), aegis/tests/test_oob_belief_elevation.py(14), integration/tests/test_oob_redrive_arm.py(15); docs/runbooks/GO-LIVE-quickstart.md:5,65-66, AWS-DEPLOY.md:118"
+      }
+    ]
+  }
+}

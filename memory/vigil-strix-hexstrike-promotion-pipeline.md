@@ -1,0 +1,30 @@
+---
+name: vigil-strix-hexstrike-promotion-pipeline
+description: "How Strix/HexstStrike LEADs become (or stay) FACTs in VIGIL: the re-drive seams, the single bypass-proof mint site, 19/56 CI-pinned. Adversarially verified (6-agent grounding, all claims CONFIRMED)."
+metadata:
+  node_type: memory
+  type: project
+  originSessionId: 7758e121-f349-47d5-886b-6bb5a1d60e27
+  modified: 2026-10-11T13:04:20.627Z
+---
+
+Adversarially-verified grounding (6-agent workflow over `/home/kali/vigil`, all 3 load-bearing claims **CONFIRMED** with file:line) of the Strix/HexStrike LEAD→FACT promotion pipeline. Answers "do their leads get oracle-promoted to FACTs, or stay leads?". See [[vigil-strix-hexstrike-wiring-program]], [[vigil-strix-fact-breadth-program]], [[vigil-hexstrike-completion-program]], [[anti-hallucination]].
+
+**Roles (different layers, both LEAD-only producers):** Strix = the agentic **reach/navigation** brain — vendored LLM pentester in an egress-gated Docker sandbox; one authoritative adapter `integration/vigil_integration/strix_runtime.py` (model-egress gate :160, prepare :226, launch :284). HexStrike = the **tool-breadth** layer — a clean-room reimpl of hexstrike-ai's decision model (`hexstrike_brain.py`, docstring :21 "ZERO fact authority") that PROPOSES which external tools to run; body gates each step (WARDEN A2: live target → nothing auto-fires, all queues for owner approval; RECON auto only in staging/twin).
+
+**The one rule, proven bypass-proof:** the ONLY signed-"fact" constructor in the whole system is a single `AdapterResult("fact")` at `oracle_adapter.py:415-416` (every other AdapterResult in the file = status="lead"). It is reached only after `confirm_and_certify` (:178) passes 3 serial gates: (1) a deterministic oracle FIRED at conf ≥ high (`confirmed_from_result`/`adjudicate_finding` → None else; verify/confirmation.py:154-174); (2) class is oracle-mapped (:297); (3) provenance ∈ `{reproduced, live_redrive}` (:359) — default "llm" → demoted to LEAD **even if an oracle fired over the model's own context** (a crafted-but-firing context is an LLM route to a FACT). The provenance set is a **module constant** (engine.py:51 "a caller cannot relax it"). Forged bare `status="fact"` is neutralised downstream (chainast/model.py:115, graph/projector.py:72, agent/checkpoint.py:286). CI tripwire `test_brain_fact_path_tripwire.py` (tool intake hard-sets exploit_succeeded=False). **No path mints a FACT without a VIGIL oracle firing.**
+
+**The re-drive IGNORES the model's payload.** Promotion ≠ "verify the model's PoC". VIGIL crafts its OWN gated probe, fetches a benign CONTROL twin (fail-closed to LEAD without it), fires the deterministic oracle over FRESH bytes, and the oracle OVERRIDES the model-claimed class with what it actually matched.
+- Strix seams: proof-sink rail `proof/run.py` `_strix_errsig_redrive` (:528-680) + generic `_REDRIVE_ARMS` (:1271); live-engage seam `live/wiring.py:1869 _build_oracle`. Promotable Strix classes (via VIGIL's branches): error/boolean/time_based_sqli, nosqli/ldap/xpath (proof-sink errsig only), open_redirect, cors, host_header, graphql_introspection, xss, ssti, dom_xss, prototype_pollution, request_smuggling, service_reachable, weak_tls.
+- HexStrike seam: R4 runner `live/external_tool.py:2443 run_external_tool`. nmap→SERVICE_REACHABILITY = VIGIL re-dials its OWN egress-pinned TCP handshake (:2574) and fires the oracle over THAT (:2611), mints at the single choke `(facts if res.is_fact else leads)` (:2636). Body surfaces only runner-minted facts (hexstrike_body.py:432); `_FORBIDDEN_EXEC_KEYS={provenance,oracle_context,_authorized,authorized}` (:112) structurally bars the body from faking evidence.
+
+**Counts (CI-pinned, verified against the JSON array):** HexStrike `docs/capability-matrix/hexstrike.json` = **19 fact_capable + 20 sound_lead + 17 blocked_excluded = 56 tracked** (of 79 upstream); the 19 are pinned EXACTLY at `test_capability_matrix_sync.py:110-122` (nmap, sslscan, masscan, rustscan, naabu, zmap, unicornscan, katana, gobuster, gau, waybackurls, feroxbuster, dirsearch, subfinder, amass, arp-scan, nbtscan, enum4linux-ng, smbmap). Frozen oracle set `_ALL_ORACLES==15` (no new OracleKind minted for breadth).
+
+**Subtle but load-bearing nuances (don't flatten):**
+1. **The FACT is always the oracle's, never the agent's.** ALL `strix.*` evidence-branches are `fact_capable=false` (evidence-branches.json) — Strix mints NOTHING under its own name. Its leads still promote, but onto VIGIL's OWN branch (error_signature/web_redrive/reflection), so the resulting FACT is VIGIL's finding. HexStrike has 19 fact_capable tool ROWS; Strix has ZERO fact_capable branches. Both: LEAD proposer, oracle disposes.
+2. **nmap "FACT" = SERVICE_REACHABILITY narrowly** — "the (host,port) VIGIL itself re-dialled is reachable", NOT "nmap found service/version X" (that stays a LEAD; the FACT authority is VIGIL's handshake, not nmap's -sV banner).
+3. **Blind OOB classes stay LEAD on the Strix proof-sink rail** (ssrf/xxe/rce/command_injection/deserialization/oob_sqli, run.py:901-943 LEAD-only) — a sound OOB FACT needs VIGIL's OWN trusted collector keypair a Strix report can't carry; FACT only via governed-engage `wiring._live_oob_redrive_fact` fed a trusted feeder bundle.
+4. **HexStrike production path PLANS only by default, mints ZERO facts** (engine_think.py:18) — minting needs the operator to provision a runner + single-use capability token (`--brain-execute-via-body`), then only via the runner's own re-drive.
+5. Stay-LEAD-forever (no oracle/re-drive arm): agentic source-code reasoning, the 20 sound_lead + 17 excluded HexStrike tools (sqlmap/metasploit/hydra/nuclei(family)/nikto/trivy/grype/...), family-agreement fuse votes (hardcoded LEAD).
+
+Live illustration (same session, PenTrix-VulnLab): deterministic engine minted 4 re-verifiable FACTs (open_redirect/achieved_state, LFI/side_effect→/etc/passwd, 2× reflected-xss/reflection_context) ONLY after targeted seeding gave the oracles insertion points — the reach gap Strix fills. [[vigil-production-bringup-and-ui-e2e]].

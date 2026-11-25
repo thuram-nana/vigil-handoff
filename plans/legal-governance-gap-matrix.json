@@ -1,0 +1,1065 @@
+{
+  "maps": [
+    {
+      "domain": "billing-credits",
+      "existing_enforcement": [
+        {
+          "requirement": "Credits wallet + append-only ledger with states Reserved / Consumed / Released / Refunded (owner-signed, idempotent, prune-durable; AI never grants)",
+          "exists_where": "Persistent wallet = /home/kali/vigil-wt-prJ2-wallet/apps/sigil/sigil/governor/wallet.py (GRANT_KINDS={trial,subscription_refill,topup,refund,reinstate} + debits; idempotent per (signal,org_id,entry_id); owner-Ed25519 signed; SnapshotState hard-prune seed; assert_no_offense/FATAL-2). RESERVED+RELEASED = governor/launch_reservations.py (reserve-wallet: debit + plan_debit draw the cap) settled by governor/launch_settlement.py (exactly-once cross-process settle lock + owner-signed launch_settled v3 decision: refund_plan/refund_wallet/refund_postpaid). CONSUMED = model_gateway.py:343 GrantMeter (hash-chained per-model-call usage) -> wallet/plan debits. REFUNDED/reversal = governor/billing_reversal.py (W5: remove/restore/repay, reinstate grant, derived HOLD blocks launch/extension).",
+          "wire_or_build": "wire \u2014 states and the reserve->consume->release/refund flow (spec flow 2) already enforced; the new UI maps onto wallet.balance/positions, metering.CreditPosition and billing_reversal.owed"
+        },
+        {
+          "requirement": "Purchased vs promotional balances + expiry (non-rollover plan credits; purchased top-ups persist)",
+          "exists_where": "Two-pool model in governor/metering.py: PlanCreditLedger = per-period allotment tranches keyed (org_id,period_end) that EXPIRE at period_end (non-rollover); CreditMeter.available = wallet.available (trial+topup, never expire) + ACTIVE subscription's current-period tranche; refill_active_subscription() is the idempotent subscription->plan refill bridge. UI already separates them: ui/billing.py billing_usage returns bought_mc (topup), trial_mc, plan tranche period_end/expiry and balance_after timeline.",
+          "wire_or_build": "wire for purchased-vs-plan(expiring); BUILD only if a DISTINCT promotional pool is wanted (see true_gaps) \u2014 reuse the PlanCreditLedger expiring-tranche mechanism"
+        },
+        {
+          "requirement": "Idempotent fulfilment (replayed webhooks / provider retries never double-credit or double-charge) \u2014 backend acceptance rule 5",
+          "exists_where": "inbound/billing_spool.py (IDEMPOTENT twice over: content-addressed processed/<sha256> spool dedup AND BillingSigner.ingest event_id idempotency; Flutterwave vigil.webhook.billing.v1 + Stripe vigil.webhook.stripe.v1 envelopes; fail-closed mandatory server-side re-verify; NET-2b bounded retry; hostile-file hardened). governor/billing.py BillingSigner: provider event_id is the idempotency anchor (wallet/plan entry_id==event_id), OUTCOME_ALREADY_MINTED, catalog-bound mint \u2014 money NEVER from the wire amount (catalog.py price_id -> amount). GrantMeter charges + wallet/metering debits are each idempotent per entry_id.",
+          "wire_or_build": "wire \u2014 do not build any parallel credit path; all fulfilment must flow through BillingSigner + the spool"
+        },
+        {
+          "requirement": "Auto-recharge: OFF by default + threshold + pack + saved method + monthly cap (A1) \u2014 backend acceptance rule 6b",
+          "exists_where": "governor/auto_topup.py DEFAULT-OFF behind config.billing_auto_topup_enabled() (VIGIL_BILLING_AUTO_TOPUP): SETTINGS(enabled, trigger_credits, pack_price_id catalog top-up, monthly_cap_credits; LWW), METHOD(Stripe cus_/pm_ ids only, no card data), CHARGE(append-only idempotent per balance crossing; outcomes charged/declined/cap_blocked; monthly cap enforced). Off-session charge via billing.StripeBillingProvider.create_off_session_topup; credit minted ONLY by the verified webhook, never the charge call. Route: server.py billing_auto_topup_set -> provision.billing_auto_topup_set.",
+          "wire_or_build": "wire \u2014 surface the already-built settings form; keep default-OFF"
+        },
+        {
+          "requirement": "Self-serve cancel: stop future renewal but keep paid access to cycle end \u2014 backend acceptance rule 6a",
+          "exists_where": "PR-G (in-flight): /home/kali/vigil-wt-prG-billing/apps/sigil/sigil/governor/plan_change.py (KIND_CANCEL -> Stripe cancel_at_period_end; period already paid runs to its end; renewal simply not minted; proration=none; no mid-period charge/refund). provision.billing_plan_change(cancel=True) gated by manage_billing + fresh step-up + checkout rate limit + one-change-per-org; route custui.py billing/plan-change (flags customer_plans_enabled + customer_plan_change_enabled). stripe_egress.py adds the subscription-update egress. Subscription state-of-record = governor/subscription.py (LWW active/past_due/canceled); billing.py handles EVENT_SUBSCRIPTION_CANCELED/subscription.deleted as a no-op so the plan expires at period_end.",
+          "wire_or_build": "wire to PR-G plan_change \u2014 DO NOT wire a cancel button to SubscriptionRegistry.cancel() (owner-manual latch = immediate revocation, WRONG semantics); cancel must go through plan_change cancel_at_period_end"
+        },
+        {
+          "requirement": "Idempotent billing / no double-charge / no duplicate credits + AI/model outputs cannot grant credits or approve money actions \u2014 backend acceptance rules 5 & the AI-advisory rule",
+          "exists_where": "Every credit mint is owner-Ed25519 signed on the spine (wallet.py/metering.py/invoices.py/billing_reversal.py all assert_no_offense, FATAL-2, keyless offense plane consumes a decision and never reads these stores). BillingSigner is the sole evidence->owner-signed-mint boundary; the LLM never grants (explicit in metering.py/auto_topup.py/plan_change.py docstrings). Catalog (governor/catalog.py) is the money anchor (reviewed code, not a wire field).",
+          "wire_or_build": "wire + preserve \u2014 any new UI stays a read/intent surface; mints stay BillingSigner-only, owner-signed"
+        },
+        {
+          "requirement": "Checkout bound to catalog price_id (defense-in-depth underpay cross-check), tenant-scoped invoices (IDOR-safe)",
+          "exists_where": "governor/billing.py create_checkout + stripe_egress.make_checkout_creator (price_id only, never an amount; metadata.org_id binds tenant; catalog expected_amounts() underpay refusal). governor/invoices.py InvoiceRegistry (owner-signed append-only history, invoice_id idempotency, prune-durable); ui/billing.py billing_invoices is org-scoped (another tenant's line is structurally never in the fold). Routes billing_checkout/billing_offers/billing_invoices in server.py (behind VIGIL_CUSTOMER_CHECKOUT).",
+          "wire_or_build": "wire"
+        }
+      ],
+      "existing_ui": [
+        "Customer Billing screen (classic + W6 dashboard behind VIGIL_CUSTOMER_BILLING_DASHBOARD): Credits card, Subscription card (billingSubscriptionCard shows plan_id/status/period), published Rates, Auto top-up section, live-consumption/held + per-charge statement (billing_usage), low-balance notice \u2014 apps/sigil/sigil/ui/customer_app/app.js",
+        "Invoices screen #/invoices (viewInvoices -> API /invoices, lists invoices + count) \u2014 app.js",
+        "Hosted checkout + buy buttons (billing_checkout / billing_offers) behind VIGIL_CUSTOMER_CHECKOUT_ENABLED",
+        "Plans screen with self-serve plan switch AND cancellation 'that takes effect at the next renewal' (PR-G, behind VIGIL_CUSTOMER_PLANS / _PLAN_CHANGE) \u2014 /home/kali/vigil-wt-prG-billing app.js + custui billing/plan-change",
+        "Auto top-up settings form (autoTopupSection) behind VIGIL_BILLING_AUTO_TOPUP",
+        "Owner/admin billing-admin views: /api/billing/overview|invoices|orgs|margin|owner-money|plans (ui/billing.py, ui/owner_money.py)"
+      ],
+      "true_gaps": [
+        "ITEMIZED TAX: no tax anywhere in the billing code \u2014 Stripe Checkout Session is created with no automatic_tax/tax_behavior; governor.invoice record (_INVOICE_CORE) has no tax_amount/tax_rate field; UI shows amount_minor/currency only. Build: enable Stripe Tax (automatic_tax) on the checkout-session creator, capture the tax amount from the Stripe invoice/session into additive signed invoice fields, display an itemized tax line on checkout confirmation + invoice. (Calculation can be delegated to Stripe Tax; VIGIL stores+displays it.)",
+        "SIGIL SARL SELLER IDENTITY on checkout + invoices: zero occurrences of seller/SARL/merchant-of-record in apps/sigil. Stripe-side seller name is owner account config; VIGIL's own invoice record + UI carry no seller/legal-entity block. Build the seller block on invoice render + checkout; owner supplies the entity details.",
+        "DISTINCT 'PROMOTIONAL' CREDIT POOL + its own expiry: wallet GRANT_KINDS has trial/topup/refund/reinstate/subscription_refill but NO 'promotional' kind and no promo-code redemption; the only expiring pool is subscription plan tranches (tied to a billing period, not an arbitrary promo expiry). If the spec means a separate promo/bonus-credit balance with independent expiry, it is a true gap \u2014 build it additively by reusing the PlanCreditLedger expiring-tranche mechanism or adding a signed 'promotional' kind with an expires_at.",
+        "'REPORT BILLING ISSUE' intake: no form/route/ledger \u2014 only free-text 'contact support' hint strings in refusal messages (pending_checkout.py, provision.py). No support-ticket store, no outbound routing. Build an intake (new signed support/billing-issue ledger and/or wire the existing OFF-by-default outbound ui/email_channel.py to notify the owner).",
+        "PER-SEAT PRICING (USD 25/seat/month): catalog models flat monthly plans ($29/$99/$299 placeholders) + top-up packs, not a per-seat quantity; no seat-count on the checkout line or subscription. If billing is truly per-seat this needs a seat-quantity model on checkout/subscription (overlaps H SSO/SCIM seat provisioning) \u2014 build + owner pricing decision."
+      ],
+      "stores_to_extend": [
+        "governor/invoices.py InvoiceRegistry \u2014 add additive signed fields tax_amount (+ breakdown) and seller/legal-entity ref to _INVOICE_CORE; bump SnapshotState.invoice_row schema + the stranded_invoices prune tripwire accordingly (keep byte-identical when the tax/seller feature flag is off)",
+        "governor/catalog.py \u2014 replace placeholder prices/allotments/currency with the owner's real values + real Stripe price/plan ids; add per-price tax treatment; add per-seat entry shape if pricing is per-seat (all owner-reviewed code)",
+        "governor/stripe_egress.py \u2014 extend make_checkout_creator to pass automatic_tax/customer_update (additive, flag-gated) and add a subscription-update egress if not already merged from PR-G",
+        "governor/wallet.py \u2014 only if a distinct promotional pool is required: add a 'promotional' GRANT_KIND with signed expires_at, or (preferred) reuse metering.PlanCreditLedger expiring tranches; keep the fold/snapshot/prune invariants",
+        "New signed support/billing-issue ledger under SIGIL_HOME (mirror InvoiceRegistry/PlanChangeLedger patterns) for 'report billing issue', or wire ui/email_channel.py outbound"
+      ],
+      "overlaps_inflight": [
+        "G billing (prG-billing): plan_change.py self-serve cancel/switch-at-renewal + Plans UI + compliance view + report-export \u2014 WIRE the cancel/plans surface here, do not rebuild",
+        "J2 wallet (prJ2-wallet): wallet.py credit ledger + assistant_wallet + the per-charge usage statement \u2014 the ledger + statement surface",
+        "W-series: W2c metered billing + balance_after timeline, W3 credit pause/resume, W4 worker/premium metering, W5 billing_reversal (disputes/refunds/hold), W6 billing dashboard",
+        "A1 (a1-auto-topup / auto_topup.py): auto-recharge settings/method/charge",
+        "stripe-default (claude/stripe-default-provider): Stripe as the default provider (Flutterwave paused) \u2014 ensure the new UI targets the Stripe path",
+        "H (prH-sso / strix enterprise-identity, tenantfound): seats/SCIM \u2014 overlaps only if per-seat billing is in scope",
+        "A (presentation, merged) and I (proof badge): adjacent consumer surfaces the billing screens sit beside"
+      ],
+      "owner_input_needed": [
+        "SIGIL SARL legal-entity details for the seller block: registered name, address, VAT/tax registration numbers, jurisdiction(s), and whether VIGIL/SIGIL SARL is merchant-of-record",
+        "Tax treatment: which jurisdictions/taxes apply, whether to enable Stripe Tax / automatic_tax, inclusive vs exclusive pricing \u2014 the tax amounts are then computed by Stripe, not fabricated",
+        "Real catalog prices + allotments + real Stripe price/plan ids (catalog.py currently carries clearly-marked PLACEHOLDER numbers), including the USD 25/seat decision and whether the model is per-seat or flat monthly",
+        "Whether a distinct promotional-credit program (promo codes / bonus credits with independent expiry) is in scope, and its expiry policy",
+        "Authoritative legal policy TEXT (Terms, DPA, privacy, subprocessors, AUP, retention, AI) \u2014 owner/counsel input; the build ships only the capture + immutable versioned archive + enforcement + page scaffolding, never fabricated text"
+      ],
+      "notes": "Scope note: the billing code is NOT in the main /home/kali/vigil checkout (it is on offense branch meridian-s5-expansion); the real consumer billing stack lives in the consumer worktrees under apps/sigil/sigil/governor/ + ui/. Most complete reads: /home/kali/vigil-wt-prJ2-wallet (wallet, metering, subscription, invoices, auto_topup, billing_spool, billing, catalog, UI) and /home/kali/vigil-wt-prG-billing (plan_change self-serve cancel/switch). I did not open ARTEX-main.zip.\n\nHeadline: the billing-credits domain is ~80% ENFORCEMENT-COMPLETE and the build is overwhelmingly a WIRE job. Already real and sound (owner-Ed25519 signed, append-only, idempotent, prune-durable, FATAL-2 sovereign-only, AI never mints): the two-pool credit wallet+ledger (Reserved/Consumed/Released/Refunded via wallet + launch_reservations/launch_settlement + GrantMeter + billing_reversal), non-rollover expiring plan credits, idempotent webhook fulfilment (sha256 spool dedup + event_id anchor, Flutterwave+Stripe), auto-recharge (OFF-default + threshold/pack/method/monthly-cap), self-serve cancel-at-period-end (PR-G plan_change), invoice history (IDOR-safe), and the customer Billing/Invoices/Plans/Checkout/Auto-topup UIs (all behind VIGIL_* flags, default-OFF, byte-identical when off).\n\nSoundness cautions for the wiring: (1) self-serve cancel MUST go through plan_change cancel_at_period_end, never SubscriptionRegistry.cancel() (that owner-manual latch revokes access immediately \u2014 contradicts 'keep paid access to cycle end'); (2) no new credit path \u2014 every mint stays BillingSigner+spool, owner-signed, catalog-priced, never a wire amount; (3) keep every store additive + default-OFF behind a VIGIL_* flag, byte-identical when off, and preserve the fold/snapshot/prune tripwire invariants and tenant org_id scoping (IDOR default-deny).\n\nTrue gaps are narrow and mostly additive-on-top: itemized tax (enable Stripe Tax + store/display), SIGIL SARL seller block on checkout/invoices, an optional distinct promotional-credit pool, a 'report billing issue' intake (none today \u2014 only 'contact support' text), and the per-seat pricing model if USD 25/seat is literal. Tax amounts and the seller/entity + legal-policy text are owner/counsel input, not to fabricate \u2014 ship capture+archive+enforcement+scaffolding and mark the text owner_input_needed."
+    },
+    {
+      "domain": "authorization-roe",
+      "existing_enforcement": [
+        {
+          "requirement": "Signed immutable authorization record (the authorization object itself)",
+          "exists_where": "TWO signed objects already exist and are the records. (1) /home/kali/vigil/packages/core/vigil_core/vigil_core/authority.py :: EngagementAuthority + SignedAuthority + sign_engagement_authority/verify_engagement_authority (owner-signed, Ed25519 over domain-separated canonical bytes b'crucible-authority-v1\\0'; tamper = verify-fail). (2) /home/kali/vigil/engine/crucible/framework/v2/authority/authorization.py :: EngagementAuthorization + SignedEngagementAuthorization (threshold m-of-n signed; carries ceiling+window+rate+concurrency). Persisted immutably to the seam by /home/kali/vigil/integration/vigil_integration/live/authorization_broker.py (write/read/list, atomic JSON) and owner-signed on the hash-chained anti-rollback spine (apps/sigil/.../ui/target_authorization.py::_record_live_attestation).",
+          "wire_or_build": "WIRE. New record UI reads list_targets()/authority_status() and renders the already-signed objects; do not invent a parallel record."
+        },
+        {
+          "requirement": "Record states Active / Expired",
+          "exists_where": "/home/kali/vigil/engine/crucible/framework/v2/authority/models.py :: AuthorityState (ACTIVE/HALTED/EXPIRED); computed at gate time in authority/gate.py::authorize_action step 2 (validity window -> EXPIRED). Window fields: EngagementAuthority.not_before/not_after.",
+          "wire_or_build": "WIRE for Active/Expired. BUILD a record-level status projection: authority_status()/list_targets() today return present/bound/window only, not a computed Active/Expired/Revoked badge."
+        },
+        {
+          "requirement": "Structured scope enforcement (allowlist, default-deny) + out-of-scope / new-host refusal (backend rule: out-of-scope redirect/new-host refusal)",
+          "exists_where": "/home/kali/vigil/engine/crucible/framework/v2/common/ethics.py :: host_matches_scope (literal + *.wildcard + canonical IPv6; default-deny) and require_in_scope; enforced in authority/gate.py::authorize_action step 3 (out_of_scope denial_code). Scope carried on EngagementAuthority.scope (list[str]).",
+          "wire_or_build": "WIRE. The new-host refusal and out-of-scope denial already fire; the out-of-scope banner reads denial_code 'out_of_scope' off the SSE/gate-event stream."
+        },
+        {
+          "requirement": "Guardrail: rate cap",
+          "exists_where": "/home/kali/vigil/engine/crucible/framework/v2/authority/authorization.py :: EngagementAuthorization.rate_limit + rate_window_seconds, HONORED by EngagementExecutor (sliding-window, typed RateLimitExceeded). Fleet aggregate: authority/fleet.py::HostRateLimiter (process-global per-target-host cap).",
+          "wire_or_build": "WIRE. Wizard rate field maps to rate_limit/rate_window_seconds; already enforced."
+        },
+        {
+          "requirement": "Guardrail: concurrency cap",
+          "exists_where": "/home/kali/vigil/engine/crucible/framework/v2/authority/authorization.py :: EngagementAuthorization.concurrency_limit, HONORED by EngagementExecutor.execute under an atomic _lock (typed ConcurrencyLimitExceeded). Soundness sibling: authority/fleet.py::ProofSerializer (serial-proof-per-target).",
+          "wire_or_build": "WIRE. Wizard concurrency field maps to concurrency_limit; already enforced."
+        },
+        {
+          "requirement": "Guardrail: action budget / per-tenant budget",
+          "exists_where": "EngagementAuthority.max_actions (authority/gate.py step 6 budget denial) + authority/fleet.py::TenantBudget (per-tenant total action budget spanning concurrent engagements).",
+          "wire_or_build": "WIRE for action/tenant budget."
+        },
+        {
+          "requirement": "Permitted-vs-prohibited techniques (by danger class) + destructive controls",
+          "exists_where": "danger_ceiling A0-A3 (EngagementAuthorization, compared via the ONE WARDEN classifier vigil_core.warden_tiers.classify; DangerCeilingExceeded). Destructive posture: EngagementAuthority.allow_destructive + live_destructive_acknowledged (authority/gate.py steps 4-5). WARDEN tool gate: integration/vigil_integration/conjunctive_gate.py + vigil_core/warden_tiers.",
+          "wire_or_build": "WIRE for tier-based + destructive controls. BUILD if the spec needs a fine-grained per-technique allow/deny list beyond tier+destructive."
+        },
+        {
+          "requirement": "Validity window (schedule) enforcement",
+          "exists_where": "EngagementAuthority.not_before/not_after and EngagementAuthorization window, both gate-enforced (EXPIRED). Default 8h, 30-day cap in ui/target_authorization.py.",
+          "wire_or_build": "WIRE single window. BUILD for recurring schedule / multiple windows / explicit timezone (model stores UTC datetimes only, no schedule/timezone field)."
+        },
+        {
+          "requirement": "Revoke kill-switch: BLOCK NEW TASKS",
+          "exists_where": "/home/kali/vigil/engine/crucible/framework/v2/authority/killswitch.py :: KillSwitch (file-backed, fail-closed, survives restart). Enforced as the FIRST conjunct everywhere: authority/gate.py step 1 (HALTED) -> vigil_core/gate.py::conjunctive_decide. Trip surfaces: console/server.py /api/killswitch/{slug}/trip, /api/emergency-stop, /api/panic; restricted_mode.py::trip_all_killswitches.",
+          "wire_or_build": "WIRE. Revoke -> killswitch.trip(slug); every gated action is then denied."
+        },
+        {
+          "requirement": "Revoke kill-switch: HALT WORKERS (in-flight)",
+          "exists_where": "Every gated edge re-checks the killswitch (conjunctive gate), so in-flight workers are denied on their next action; console/server.py /api/run/{id}/cancel (actions.cancel_run terminates the run pid); /api/panic + /api/down contain the process; restricted_mode.py is the UP-but-restricted landing state.",
+          "wire_or_build": "WIRE existing primitives. Note the honest bound: a running subprocess continues until its next gate check (soft halt) unless cancel_run/panic terminates it."
+        },
+        {
+          "requirement": "Egress floor (never-liftable; a charter literal cannot aim traffic at internal/metadata space)",
+          "exists_where": "/home/kali/vigil/integration/vigil_integration/live/egress_floor.py::pin_egress + /home/kali/vigil/gateway/vigil_gateway/denylist.py::is_egress_denied (Tier-1 never-liftable: loopback/link-local/169.254.169.254/metadata/reserved; Tier-2 conditional RFC1918). Syscall supervisor: integration/vigil_integration/live/egress_guard.py (connect/sendto/sendmsg, loopback-only, production-forced). Mint-time refusal of private LIVE literals: ui/target_authorization.py::_validate_host.",
+          "wire_or_build": "WIRE/PRESERVE. Do not weaken; the new scope UI must keep _validate_host tiered refusal at mint."
+        },
+        {
+          "requirement": "Electronic acceptance: signatory + timestamp + scope binding",
+          "exists_where": "Ed25519 owner/threshold signatures = signatory (vigil_core.models.Signature.key_id); issued_at/not_before = timestamp; the signature COVERS canonical bytes incl. scope (a scope-hash is derivable) and authority/crosscheck.py binds the three legs (ScopeDrift/EnvelopeDrift). WS2 evaluator acceptance (ui/target_authorization.py::_verify_evaluator_attestation) captures evaluator identity + single-use challenge, recorded owner-signed on the spine.",
+          "wire_or_build": "WIRE the crypto primitives. BUILD a first-class acceptance record that also captures signatory ROLE, POLICY-VERSION, and an explicit scope_hash field in one signed row (see true_gaps)."
+        },
+        {
+          "requirement": "Legal instrument capture + versioned archive + ship enforcement (Terms/NDA/DPA/authorization-letter)",
+          "exists_where": "/home/kali/vigil/engine/crucible/framework/v2/authority/counsel_review.py (placeholder scanner + counsel-review manifest + fail-closed ship gate; currently all PENDING), /home/kali/vigil/engine/crucible/framework/templates/authorization-letter.md (Parties/legal-entity, in-scope table, machine-checked ENVELOPE block, explicit Out-of-scope), charter template targets/_template/charter.md, report/authorization.py (reads in-scope/out-of-scope/stop-conditions/window).",
+          "wire_or_build": "WIRE the ship-gate + crosscheck as the enforcement/archive spine; the authoritative policy TEXT is owner_input (see owner_input_needed)."
+        },
+        {
+          "requirement": "AI/model outputs cannot modify permissions or self-approve (preserve)",
+          "exists_where": "/home/kali/vigil/engine/crucible/framework/v2/veracity/firewall.py (DEMOTE-ONLY, never promotes); authority/gate.py blast(6b)/witness-quorum(6c) are advisory/demote-only injected callables (gate imports no oracle/world-model); destructive actions need owner-inclusive m-of-n (vigil_core/gate.py conjunctive_decide, strict `authorized is True`).",
+          "wire_or_build": "PRESERVE. New UI is advisory input only; it must not become a permission-mutating or FACT-minting path."
+        }
+      ],
+      "existing_ui": [
+        "Offense Ops Console (/home/kali/vigil/engine/crucible/framework/v2/console/static/app.js): kill-switch pill (tripped/armed + reason) and a '\u26d4 Trip kill-switch (emergency stop)' button (Console.tripKill -> /api/killswitch/{slug}/trip); charter present/missing pill; authority scope display (au.scope); gate-event categorization that already tags scope/authority/budget/destructive/egress/rate events; engagement table (env/charter/kill-switch/evidence/log).",
+        "Console backend emergency/stop surface (console/server.py + console/actions.py): /api/emergency-stop (enter/leave restricted mode), /api/panic, /api/down, /api/run/{id}/cancel, /api/killswitch/{slug}/trip; launch gate _has_verified_authority refuses a remote run with no cryptographically verified authority (the enforcement behind a pre-run confirm).",
+        "Sovereign cockpit (apps/sigil/sigil/ui/): target_authorization add/list/status actions (owner-sign an EngagementAuthority on the seam, list records, read authority_status) routed via ui/actions.py; offense-approvals ceremony (sign/deny queued offense approvals).",
+        "Unified edge (integration/vigil_integration/uiproxy.py 'vigil up'): one-origin UI federating sovereign + offense planes behind per-user hop-signed RBAC (default-deny unmapped routes); plane status. This is the shell the new consumer screens mount into."
+      ],
+      "stores_to_extend": [
+        "/home/kali/vigil/packages/core/vigil_core/vigil_core/authority.py :: EngagementAuthority \u2014 add additive, signed, default-empty fields for the wizard metadata (legal_entity, authorizing_rep, basis, delegated_owner, proof_of_authority_ref, policy_version, scope_hash, exclusions, typed-scope, schedule/timezone, credential_ref). Keep defaults empty so canonical bytes stay byte-identical when unused; any set value changes the owner-signed bytes and requires re-sign (both planes agree by construction).",
+        "/home/kali/vigil/integration/vigil_integration/live/authorization_broker.py \u2014 add a revocation/state transition (Revoked) + a record-status computation; today it only write/read/lists (no revoke/delete).",
+        "The spine governance-signal idiom (apps/sigil/sigil/ui/target_authorization.py::_record_live_attestation / governor signed-grant) \u2014 record REVOKE and the acceptance event as owner-signed, witnessed, anti-rollback rows rather than mutating a record in place.",
+        "/home/kali/vigil/engine/crucible/framework/v2/authority/authorization.py :: EngagementAuthorization \u2014 already carries ceiling/rate/concurrency; extend here (not a new model) if resource caps are added.",
+        "Legal-instrument spine: authority/counsel_review.py manifest + authorization-letter.md / charter template + authority/crosscheck.py (three-leg bind) \u2014 extend as the capture+archive+enforcement for policy acceptance.",
+        "RBAC/identity: apps/sigil/sigil/governor/accounts.py + uiproxy hop-signed roles \u2014 source of the signatory ROLE for the acceptance record.",
+        "vigil_core token-budgets ledger (console /api/token-budgets) \u2014 nearest existing cost cap; resource/credit caps otherwise land in the in-flight billing layer."
+      ],
+      "true_gaps": [
+        "No first-class REVOKED record state. Revocation today is achieved indirectly (trip the per-slug kill-switch = halt, let the window expire, or entitlement SignedRevocation for capability grants) but the seam broker has no revoke op and authority_status()/list_targets() compute no Active/Expired/Revoked tri-state. BUILD: a record-level Revoke that (a) records an owner-signed REVOKED signal, (b) makes the launch gate refuse by that state, (c) composes killswitch.trip + cancel_run. Wiring over existing primitives, not new enforcement.",
+        "No explicit 'cancel queued tasks' on revoke. Queued A2/A3 approvals and feed sidecars simply can't run (gate re-checks the killswitch), and cancel_run kills a running pid, but there is no bulk 'cancel everything queued/in-flight for this authorization slug' operation wired to a revoke button.",
+        "Wizard identity/legal metadata fields are not structured on the record: legal_entity, authorizing_rep + basis, delegated_owner, proof_of_authority_ref. These exist only as PROSE in the authorization-letter / charter templates (\u00a71 Parties, Operator attestation). EngagementAuthority has only issued_by (the operator).",
+        "Structured multi-asset scope is a gap. scope is a flat list[str] of host/IP literals + wildcards; there is no typed sub-scope for apps / repos / cloud-account-ids. (Codebase scans use a clone path, not the authority scope model.)",
+        "Structured, machine-read EXCLUSIONS field is a gap. Out-of-scope is enforced only by allowlist default-deny (host_matches_scope) and documented as prose in charter/letter; there is no per-record exclusions list the gate reads to actively refuse a listed host.",
+        "Electronic-acceptance record does not capture policy_version or signatory ROLE, and exposes no explicit scope_hash field. The signature covers scope (hash derivable) and timestamp/signatory exist, but there is no single signed acceptance row binding signatory+role+timestamp+policy_version+scope_hash as the spec enumerates.",
+        "No schedule / recurring-window / timezone on the record \u2014 only a single not_before/not_after (UTC implicit).",
+        "No resource caps (CPU/mem/disk) on the authority model (token-budgets caps LLM tokens only). Credit caps live in the in-flight billing layer, not the authority record.",
+        "credentials = secret-store-ref-only: the authority schema carries NO credential field at all (only PUBLIC pins like oob_collector_pubkey). A secret-store-ref field for authenticated-scan creds is a gap; the 'ref not secret' pattern is partially present (pins + vault-sealed governance key) but not wired for target creds.",
+        "No dedicated CONSUMER pre-run modal (flow 2) or out-of-scope banner (flow 3) component. The enforcement + data behind them exist (verified-authority launch gate, out_of_scope denial_code, scope/envelope read model, gate-event SSE); the consumer-facing modal/banner UI is the net-new build this wave wires."
+      ],
+      "overlaps_inflight": [
+        "C (connect/ownership-proof) -> proof_of_authority_ref + legal-entity ownership proof; the wizard's authority proof should consume C's ownership-proof artifact, not a parallel one.",
+        "G (billing) + J2 (wallet) + W-series + A1 auto-topup + GrantMeter -> the credit-cap guardrail and the credits ledger (Reserved/Consumed/Released/Refunded); do NOT model credit caps inside the authority record \u2014 reference the billing layer.",
+        "H (SSO/SCIM) + strix enterprise identity/tenant -> authorizing_rep / delegated_owner / signatory-role identity and the per-tenant isolation of authorization records (TenantBudget already exists in authority/fleet.py).",
+        "I (proof badge) -> surfacing signed-record immutability + the acceptance/verification proof (reuse the signature + crosscheck, feed the badge).",
+        "A (presentation, merged) -> the shell/navigation the new Authorizations & ROE screens mount into.",
+        "Strix-default / Stripe-default + enterprise identity -> seller = SIGIL SARL, seat USD 25/seat/mo; the billing-side caps and checkout are the in-flight path, not re-built here."
+      ],
+      "owner_input_needed": [
+        "Authoritative legal TEXT for all policies (Terms, DPA, Privacy, Subprocessors, AUP, Data-Retention, AI policy). counsel_review.py already gates these as PENDING with a placeholder scanner; the build ships CAPTURE + immutable versioned ARCHIVE + ENFORCEMENT + page scaffolding, with the text marked owner/counsel input.",
+        "The policy_version string / policy registry values that the acceptance record binds.",
+        "Governing-law, parties, dates and the other authorization-letter/charter placeholders (the counsel-review + placeholder-scan gate refuses to ship until resolved).",
+        "The permitted-vs-prohibited TECHNIQUE taxonomy beyond WARDEN tiers (A0-A3) + destructive \u2014 i.e. the exact catalog the wizard offers, if finer than tier+destructive.",
+        "Default guardrail values per plan/tier (rate, concurrency, action budget, credit caps) and the secret-store backend choice for the credential-ref field."
+      ],
+      "notes": "Bottom line: for authorization-roe the ENFORCEMENT is almost entirely built and must be WIRED, not rebuilt. Backend rules 1-3 (scope/exclusions enforcement, expired-auth blocking, out-of-scope/new-host refusal, kill-switch, egress floor) are enforced by the conjunctive gate-of-record (vigil_core/gate.py::conjunctive_decide -> authority/gate.py::authorize_action order: killswitch->window->scope->destructive->budget), the signed authority objects (vigil_core.authority.EngagementAuthority + authority.authorization.EngagementAuthorization with its EngagementExecutor honoring rate+concurrency+ceiling), the three-leg crosscheck (authority/crosscheck.py), the fleet caps (authority/fleet.py: HostRateLimiter/TenantBudget/ProofSerializer), the never-liftable egress floor (egress_floor.py + gateway/vigil_gateway/denylist.py + egress_guard.py), and the file-backed fail-closed kill-switch (authority/killswitch.py) plus restricted_mode.py. The real gaps are (1) a first-class REVOKED record state + revoke op that composes killswitch.trip/cancel_run/cancel-queued, (2) structured wizard metadata on the record (legal entity / rep / basis / delegated owner / proof-ref / policy_version / scope_hash / typed-scope / exclusions / schedule-timezone / credential secret-ref), and (3) the consumer-facing pre-run modal + out-of-scope banner UI (data+enforcement already present). PRESERVE invariants when wiring: the two-env boundary (the sovereign owner-key process in apps/sigil must never import framework/strix \u2014 target_authorization.py uses only vigil_core + the seam broker); AI stays advisory/demote-only (veracity/firewall.py, gate 6b/6c) and never a permission-mutating or FACT-minting path; signing/immutability and RBAC default-deny stay intact; every new store/flow is additive, default-OFF behind a VIGIL_* flag, and byte-identical when off (empty default signed fields keep canonical authority bytes unchanged). Policy TEXT is owner/counsel input; ship the capture+archive+enforcement scaffolding only. I did not open /home/kali/Downloads/ARTEX-main.zip; read-only, no edits/writes, no traffic."
+    },
+    {
+      "domain": "team-seats-rbac (Legal/Compliance/Billing/Authorization/Governance spec 1A Authorized-Administrators-least-privilege + 1B Team & Seats) for VIGIL",
+      "existing_enforcement": [
+        {
+          "requirement": "1A \u2014 Least-privilege admin roles that separate billing/membership authority from testing authority",
+          "exists_where": "packages/core/vigil_core/vigil_core/rbac.py (origin/main): per-org roles _ORG_ADMIN={read,view_billing,view_usage,view_invoices,manage_billing,manage_members,manage_monitoring} (NO run_engagement/offense_authority) and _FOUNDER=_ORG_ADMIN|{run_engagement,view_assessments,manage_code}; comment 'billing-authz != testing-authz, structurally'. Global chain viewer<analyst<operator<owner unchanged.",
+          "wire_or_build": "wire"
+        },
+        {
+          "requirement": "1A \u2014 Per-org admission gate binding the SESSION org (IDOR defense, never body-supplied org)",
+          "exists_where": "apps/sigil/sigil/governor/orgs.py (origin/main): OrgRegistry.admit_customer / membership_role / _OrgsView.admit (no global leg); ui/provision.py admit_customer(requester, session_org, permission). role_can (per-org) vs role_can_global split in rbac.py.",
+          "wire_or_build": "wire"
+        },
+        {
+          "requirement": "1A/1B \u2014 Member grant/revoke with a role ceiling that forbids privilege escalation",
+          "exists_where": "apps/sigil/sigil/ui/provision.py (origin/main) grant_member/revoke_member: checks admit_customer(...,manage_members) THEN owner-signs a CAPPED grant; _CUSTOMER_GRANTABLE_ROLES={viewer,analyst,org_admin} deliberately EXCLUDES operator/founder/owner; founder changes are owner-only (owner_set_member_role / owner_demote_founders).",
+          "wire_or_build": "wire"
+        },
+        {
+          "requirement": "1A \u2014 Anti-orphan: cannot remove the last admin who holds manage_members",
+          "exists_where": "apps/sigil/sigil/ui/provision.py _member_admins() + the last-admin refusal in grant/revoke/owner_set_member_role (~:444,:496).",
+          "wire_or_build": "wire"
+        },
+        {
+          "requirement": "1A \u2014 Step-up MFA required for sensitive member/admin ops",
+          "exists_where": "apps/sigil/sigil/ui/provision.py ProvisionStepUpRequired / _require_stepup (E3c, default-OFF behind customer step-up flag).",
+          "wire_or_build": "wire"
+        },
+        {
+          "requirement": "1A \u2014 Rate-limit + audit trail on membership admin ops",
+          "exists_where": "config.MEMBER_OPS_PER_MIN (VIGIL_MEMBER_OPS_PER_MIN, default 30) + MEMBER_RATELIMIT_DIR limiter (provision.py:3818); every grant/revoke writes an owner-signed CRITICAL audit row (_member/owner_membership_audit).",
+          "wire_or_build": "wire"
+        },
+        {
+          "requirement": "Ground-fact \u2014 AI/model output can never mint or modify a permission/role",
+          "exists_where": "Single-owner doctrine: owner Ed25519 key is SOLE signer of every org/account/membership grant (orgs.py / accounts.py docstrings); no member ever holds a key; grants are asymmetric (dangerous dir owner-signed+fresh, revoke fail-safe). AI stays advisory/demote-only (engine verify/firewall.py). No LLM path reaches the admission gate.",
+          "wire_or_build": "wire"
+        },
+        {
+          "requirement": "1B \u2014 Member status Active + removal (Revoked), replay-safe",
+          "exists_where": "apps/sigil/sigil/governor/orgs.py Membership.state \u2208 {active,revoked}; grant_membership (dangerous/owner-signed/fresh) + revoke_membership (safe/unsigned-ok/issued_at=0.0); per-(org,user) LWW high-water + hard-prune seed closes the replay-resurrection HIGH.",
+          "wire_or_build": "wire"
+        },
+        {
+          "requirement": "Ground-fact \u2014 idempotent billing / no double-charge / no duplicate credits (the substrate seat-billing must reuse)",
+          "exists_where": "governor/wallet.py (granted/debited + consumed entry_id set, snapshot-seeded); governor/cost_ledger.py reserve-cost/settle-cost envelope (Reserved\u2192Consumed/Released analog); governor/postpaid.py reserve/settle; governor/billing.py Stripe webhook minting keyed on event_id/session id (one mint per session); auto_topup idempotent per (org, crossing_key).",
+          "wire_or_build": "wire"
+        },
+        {
+          "requirement": "Ground-fact \u2014 cancel-subscription stops renewals",
+          "exists_where": "governor/billing.py EVENT_SUBSCRIPTION_CANCELED\u2192subscription.cancel and EVENT_PAYMENT_FAILED\u2192mark_past_due (dunning); governor/metering.py:451 'only an active plan refills; dunning/canceled do not'.",
+          "wire_or_build": "wire"
+        },
+        {
+          "requirement": "Ground-fact \u2014 auto-recharge OFF by default",
+          "exists_where": "governor/auto_topup.py \u2014 DEFAULT-OFF behind config.billing_auto_topup_enabled(); SETTINGS/METHOD/CHARGE signals LWW per org, charge append-only idempotent per crossing_key.",
+          "wire_or_build": "wire"
+        },
+        {
+          "requirement": "Ground-fact \u2014 chargeback/refund reversal + billing hold (the Refunded state + owes-credits enforcement)",
+          "exists_where": "governor/billing_reversal.py (chargebacks/refunds) + governor/billing_hold.py (durable owes-credits alarm, enforced from the spine).",
+          "wire_or_build": "wire"
+        },
+        {
+          "requirement": "1A \u2014 Owner-only ceiling: no org member can reach manage_org/manage_users/secrets/promote/offense_authority",
+          "exists_where": "vigil_core/rbac.py: manage_org/manage_billing/manage_members live in _OWNER; org_admin/founder carry only the per-org subset; role_can_global refuses any per-org role in a global position; orgs.py _ASSIGNABLE_ROLES excludes owner.",
+          "wire_or_build": "wire"
+        }
+      ],
+      "existing_ui": [
+        "Consumer Team screen: apps/sigil/sigil/ui/customer_app/app.js viewTeam (~:2100), flag VIGIL_CUSTOMER_TEAM_UI (config.customer_team_ui_enabled) \u2014 member list ordered by _TEAM_ORDER, add-by-email, grant/revoke, step-up-gated. Dispatch absent while flag off (byte-identical). Edge reads in custui.py:616-636.",
+        "Sovereign cockpit Users & Roles: packages/vigil-ui/app.js 'users' tab (owner:true, perm manage_users) backed by ui/server.py:_accounts() \u2192 AccountsRegistry.accounts() (username/role/state/issued_at/expires_at; cred_hash/salt never surfaced). This is spec 1A on the owner/operator plane.",
+        "Billing dashboard app.js viewBillingDashboard (~:806, flag VIGIL_CUSTOMER_BILLING_DASHBOARD) + Invoices viewInvoices (~:1112) + classic Billing (~:771); edge _READS billing/invoices/rates/usage.",
+        "Customer OIDC (Google) login: ui/oidc.py + custui.py /api/customer/oidc/* (VIGIL_CUSTOMER_OIDC_*). Consumer login only \u2014 NOT enterprise federation."
+      ],
+      "stores_to_extend": [
+        "governor/orgs.py Membership \u2014 add an additive sub-status field (pending | suspended | service_account) via the conditional-signed-core idiom (accounts.py _core_fields pattern: field present only when set, so pre-existing grants canonicalize byte-identically). KEEP active/revoked as the auth-determining states; new statuses are read-time filters / additive signals that can only SUBTRACT access when off.",
+        "NEW governor/invitations.py (or an org_membership 'pending' signal) \u2014 owner/admin-signed pending-invite record; confirmation promotes to an active membership. Fills the Pending status + the missing invite flow.",
+        "governor/catalog.py \u2014 add a seat SKU (price_id, USD 25/seat/month, includes no credits) behind the owner catalog (catalog-decides-money).",
+        "NEW governor/seats.py \u2014 per-org seat count as an owner-signed LWW record wired to the Stripe subscription quantity; proration computed from seat delta \u00d7 price; reuse governor/metering.py period_end for revoke-at-renewal scheduling (a scheduled-at-period-end membership/seat mutation record).",
+        "ui/provision.py + ui/custui.py + customer_app/app.js \u2014 Team screen wiring for the new statuses, the add-seat proration confirm modal, and the revoke-at-renewal control (all behind a new default-OFF VIGIL_CUSTOMER_* flag).",
+        "NEW governor/scim.py + ui/scim.py + governor/sso_config.py + ui/saml.py (PR-H, greenfield) \u2014 the IdP-driven provisioning writer for service-account + pending/deactivated seats; each provisioned membership still owner-signed (never trust an IdP claim as authority), role capped at founder."
+      ],
+      "true_gaps": [
+        "Pending (invited-not-yet-accepted) member status \u2014 NO invite flow exists; add-member requires an existing VIGIL account (provision.py _ADD_NO_ACCOUNT: 'there is no VIGIL account for that email \u2026 create one first'). orgs.py docstring confirms 'Admit-by-INVITE only: an owner adds members; there is no self-service signup path here'. Needs a new pending record/flow.",
+        "Suspended (reversible) member status \u2014 membership is only active|revoked and revoke is the terminal SAFE direction. There is no reversible per-seat suspend. Org-level adjacents exist but are NOT per-seat: subscription past_due(dunning)/canceled (metering/billing.py), customer_latch (owner org-level kill switches), billing_hold (org owes credits). A reversible 'suspended' seat is a new additive membership state.",
+        "Service-Account seat type/status \u2014 no first-party service-account member concept in the org plane (grep: none; openai venv hits are vendor). Partial analog only: sovereign accounts.py per-user Ed25519 keypair + bearer + absolute expires_at (TTL) can model a machine identity, but it is the owner/operator plane and carries no org seat status. SCIM provisioning (the natural source of service accounts) is greenfield.",
+        "Seat as a billing UNIT \u2014 billing today is credits-wallet + subscription-plan + top-ups; 'seat' appears nowhere in governor/billing code. No seat quantity, no per-seat USD 25 line item, no seat\u2194membership coupling. The $25/seat/month is a PRICING DECISION only (docs/decisions/PRICING-RED-PEN-DESIGN.md; HANDOFF-SESSION.md: 'platform access only, includes no credits', explicitly 'do not build the seat SKU yet').",
+        "Add-seat proration confirm modal \u2014 no seat-count\u2192proration calculation and no confirm modal. Stripe proration is RECOGNIZED by the webhook handler only to NOT advance the plan period on mid-cycle invoices (_STRIPE_NEW_PERIOD_REASONS); it is not seat-driven. Both the calc and the modal are to build (on top of catalog.py + the subscription machinery).",
+        "Revoke-at-renewal (schedule a seat/member removal at next renewal) \u2014 no scheduled membership mutation; revoke is immediate. Needs a scheduled-at-period-end record folded against metering.py period_end.",
+        "Enterprise SAML SSO + SCIM 2.0 provisioning \u2014 greenfield (no first-party scim.py/saml.py/sso_config.py; only offense bug-classes saml_forgery/scanner/sso exist). This is the IdP-driven create/deactivate\u2194membership path that would feed Pending + Service-Account seats. Maps to prH-sso / PR-H.",
+        "Unified credits-ledger STATUS projection (Reserved/Consumed/Released/Refunded/Promotional as one named surface) \u2014 the STATES and their idempotent enforcement exist, but spread across wallet.py / cost_ledger.py (reserve-cost/settle-cost) / postpaid.py / billing_reversal.py / trial-signup grants; there is no single named enum or a UI view that rolls them up. This is a presentation/wiring gap, not missing enforcement.",
+        "'Authorized Administrators' least-privilege VISUALIZATION \u2014 the enforcement and the Team/Users screens exist, but a dedicated least-privilege admin surface (who-can-do-what role matrix, billing-vs-testing separation made visible) is presentation to build."
+      ],
+      "overlaps_inflight": [
+        "PR-H / Area 7 (SSO/SCIM) \u2014 directly overlaps the Pending + Service-Account seat statuses: SCIM create/deactivate\u2194membership and SAML JIT mapping are the provisioning writers. Build the new seat statuses as the TARGET of PR-H; do not build a parallel provisioning path.",
+        "PR-G / Area 6 (self-serve billing polish, Plans screen, 'downgrade prorates correctly') \u2014 the seat proration + revoke-at-renewal ride this: reuse the subscription + reversal machinery and catalog/checkout stack rather than a new money path.",
+        "W-series billing + A1 auto-topup + Stripe-default \u2014 the money substrate seats bill against (idempotent fulfilment, catalog-decides-money, auto_topup default-OFF). Extend, never fork.",
+        "J2 wallet / Area 9 (assistant/wallet) \u2014 the credits-ledger status projection overlaps wallet presentation.",
+        "Area 2 / PR-C (unified connect + ownership-proof) \u2014 tangential (host proof / founder self-serve testing), not seats, but shares the org/membership fold.",
+        "Consumer onboarding (A, merged) \u2014 the Team/members reads are already flag-gated in custui.py:616-636; new seat UI threads the same edge read map."
+      ],
+      "owner_input_needed": [
+        "Go-ahead to UN-DEFER the seat SKU: HANDOFF-SESSION.md explicitly says 'do not build the seat SKU yet'. Building 1B seat billing contradicts that standing instruction unless the owner reverses it.",
+        "Seat proration policy specifics: immediate charge vs next-invoice; exact confirm-modal amounts/copy; confirm 'a seat includes no credits' (decided 2026-11-15 \u00a71.1b \u2014 confirm still current).",
+        "Definition of a 'Service-Account' seat: non-interactive member billed as a seat, a SCIM-provisioned identity, or an API-key principal? Drives whether it is an orgs.py status, a SCIM artifact, or an accounts.py keypair.",
+        "Suspended-seat semantics: does a suspended seat still bill? Grace period before auto-revoke? Who can suspend/resume (org_admin vs owner)?",
+        "Revoke-at-renewal semantics: does the seat stay usable until period end? Any pro-rata refund?",
+        "Legal/contract TEXT for the seat terms and admin-responsibility language on the SIGIL SARL checkout/invoice (seller = SIGIL SARL, Stripe) \u2014 owner/counsel input; do not fabricate. Ship the capture + versioned archive + enforcement + page scaffolding only."
+      ],
+      "notes": "CRITICAL BRANCH DISCREPANCY: the working tree is on branch meridian-s5-expansion, which LACKS the entire consumer multi-org plane (ui/custui.py, ui/provision.py, governor/orgs.py, governor/billing*.py, customer_app/ are absent; its vigil_core/rbac.py has ONLY viewer/analyst/operator/owner and none of the org_admin/founder/manage_members SaaS vocabulary). The canonical state this domain must wire to lives on origin/main (plan audit head 072b96b4). Every file:symbol above was read from `git show origin/main:<path>` \u2014 verify against origin/main, not the checkout.\n\nTWO-PLANE MODEL (load-bearing): (1) SOVEREIGN cockpit RBAC \u2014 governor/accounts.py + global roles, the owner's single-tenant operator admin (Users & Roles, manage_users owner-only). (2) CONSUMER multi-org plane \u2014 governor/orgs.py per-org memberships (org_admin/founder) admitted by admit_customer, the paying customer's team. Spec 1A maps to BOTH (owner's admins + customer org-admins); spec 1B (Team & Seats with proration) maps to the CONSUMER plane. 'strix enterprise identity/tenant' = engine/crucible/.../common/tenant.py is PROCESS-shard isolation (CRUCIBLE_TENANT, one tenant per process) tied to orgs via org==tenant_id, NOT a seat model; the entitlement/ layer is an m-of-n-signed INSTITUTION capability-tier license, also not seats.\n\nNET ASSESSMENT: 1A (least-privilege admins) is SUBSTANTIALLY BUILT and sound \u2014 role separation, per-org admission/IDOR defense, capped grants, anti-orphan, step-up, rate-limit, owner-signed audit, single-owner ceiling all exist; the work is PRESENTATION + a least-privilege admin surface. 1B is PARTIAL: Active + removal exist and are replay-safe; Pending, Suspended, Service-Account statuses and the whole SEAT-as-billing-unit (SKU, count, proration modal, revoke-at-renewal) are TRUE GAPS, and SSO/SCIM provisioning is greenfield. The billing idempotency/ledger states the ground facts cite DO exist (wallet/cost_ledger/postpaid/billing_reversal + Stripe idempotent minting) but not as one named enum/UI view.\n\nINVARIANTS TO PRESERVE while building: single-owner Ed25519 as sole signer (no member key, no IdP claim as authority); conditional-signed-core so additive Membership fields stay byte-identical to old grants; per-org role ceiling (cap at founder; manage_org/manage_billing stay owner-signed); default-deny; every new store/flow additive and default-OFF behind a VIGIL_* flag, byte-identical when off (route 404s / dispatch absent). Seats and statuses are additive signals that can only SUBTRACT access when enforced, never widen it."
+    },
+    {
+      "domain": "ai-hitl-governance",
+      "existing_enforcement": [
+        {
+          "requirement": "Human-approval policy: intervention/isolation/credential-change/prod-remediation need human sign-off; AI cannot self-authorize scope",
+          "exists_where": "packages/core/vigil_core/vigil_core/warden_tiers.py classify() \u2014 secret/credential/key/token/iam/role/grant/revoke/rotate/escalate/infra/prod/production/deploy/patch + destructive verbs (kill/disable/shutdown/reboot/reset) ALL classify A3 (fail-closed, whole-token, byte-faithful port of SIGIL Rust WARDEN kernel apps/sigil/kernel/src/tiers.rs); integration/vigil_integration/warden_gate.py decide_tool() routes A2/A3-above-ceiling to QUEUE -> per-action owner-signed broker; integration/vigil_integration/destruction_gate.py adds m-of-n threshold + MANDATORY OWNER for irreversible/high-blast (prod) actions",
+          "wire_or_build": "WIRE \u2014 enforcement complete; the consumer modal/screen names which tier an action hit and why it needs sign-off. Do NOT add a parallel approval path."
+        },
+        {
+          "requirement": "AI outputs cannot modify permissions or self-approve (advisory/demote-only)",
+          "exists_where": "engine/crucible/framework/v2/veracity/firewall.py admit() \u2014 DEMOTE-only: can turn a fabricated 'confirmed' into UNGROUNDED but can NEVER promote a claim the oracle refused; packages/core/vigil_core/vigil_core/ai_gateway.py egress() step 6 output-verify \u2014 provider is never authoritative, never in the trust root; integration/vigil_integration/live/approval_token.py \u2014 'a token NEVER widens scope': upgrades WARDEN queue->allow ONLY, a CRUCIBLE deny (out-of-scope/kill-switch/budget) stays deny; the owner PRIVATE key is off-box (VIGIL_APPROVAL_OWNER_KEY), the keyless console/agent cannot sign",
+          "wire_or_build": "WIRE \u2014 advisory/demote invariant is structural; surface it, never relax it."
+        },
+        {
+          "requirement": "Approval bound to specific action+target with an expiry timer",
+          "exists_where": "integration/vigil_integration/live/approval_token.py \u2014 token binds exact (tool_name, target, action_digest[covers args]); not_before/not_after window + policy-capped lifetime (dead-man's-switch); integration/vigil_integration/live/approval_broker.py VIGIL_APPROVAL_WAIT_SECONDS (default 300s, cap 900s); the pending request is served with tool_name/target/action_digest/nonce/created_at_iso by engine/crucible/framework/v2/console/api.py:544 approvals()",
+          "wire_or_build": "WIRE+thin-BUILD \u2014 all binding data is already served; build only the flow-3 modal presentation with a live expiry COUNTDOWN (client render over created_at_iso + VIGIL_APPROVAL_WAIT_SECONDS). Signing stays OFF-BOX (keyless console = FATAL-2 invariant); modal guides to `vigil approve sign` / sovereign cockpit / SIGIL phone companion."
+        },
+        {
+          "requirement": "Reject expired / replayed approvals SERVER-SIDE",
+          "exists_where": "integration/vigil_integration/live/approval_token.py verify_token() returns DENY 'outside the token validity window (expired/early)' and 'token already consumed (replay)'; consume_token() does an ATOMIC check-and-burn via integration/vigil_integration/live/nonce_ledger.py NonceLedger (O_EXCL serialization, every replay loses); integration/vigil_integration/fireteam/confirmation.py \u2014 signed Ed25519 envelope re-verified on every replay, bound to (engagement,wave_id,member_id,seq,outcome,approved) so cross-engagement/cross-escalation/reject->approve-flip replays all fail, deadline_seq auto-REJECTS",
+          "wire_or_build": "WIRE \u2014 100% server-side already. The APPROVAL_REJECTED_PAUSE label + rejected-reason string already exist for the UI to reflect. Nothing to rebuild."
+        },
+        {
+          "requirement": "Advisory-only notice on AI outputs",
+          "exists_where": "Enforced substrate present: firewall.py admit() demote-only; ai_gateway.py output-verify; Brain screen is 'the propose-only decision engine' (.vigil-live/ui/system-map.json); consumer assistant (plan Area 9 / J-J2) spec is 'AI-advises, oracle-grounds, no FACT minted, all model calls through ModelGateway'. The advisory doctrine is pervasive but there is no explicit persistent consumer-facing advisory banner component on AI-output surfaces.",
+          "wire_or_build": "BUILD (light/presentation) \u2014 a reusable advisory-only notice on AI-output surfaces (assistant answers, step-proposals, remediation drafts). Pure UI; the demote-only enforcement already guarantees the claim is true. Copy text is owner_input."
+        },
+        {
+          "requirement": "No external training of secrets",
+          "exists_where": "packages/core/vigil_core/vigil_core/ai_gateway.py egress() is the ONE mandatory LLM-egress chokepoint: step 2 redact masks recognized credential shapes (Bearer/credential-headers/secret-named key=value) before any prompt leaves host; mandatory two ways (runtime EgressBypass via assert_in_egress + static no-bypass CI guard integration/tests/test_egress_no_bypass_guard.py); apps/sigil/sigil/ui/settings.py CONFIG_META CRUCIBLE_ANTHROPIC_ZDR (zero-data-retention attestation, routes Claude via ZDR endpoint) and CRUCIBLE_SOVEREIGNTY_TIER=AIR_GAPPED (local backends only \u2014 every cloud model call refused before bytes leave)",
+          "wire_or_build": "WIRE+BUILD \u2014 enforcement + ZDR/local-only toggles exist; surface them as a consumer 'AI data handling' group. HONEST LIMIT (do not overclaim): the masker only recognizes certain credential SHAPES (not bare AWS keys/PEM/JWT/GitHub-Slack tokens/high-entropy strings) and ZDR is an ATTESTATION, not a VIGIL-enforced provider contract \u2014 the contract itself is owner_input."
+        }
+      ],
+      "existing_ui": [
+        "Approvals & Safety screen \u2014 owner approval queue + kill-switch; data from engine/crucible/framework/v2/console/api.py:544 approvals() (lists pending per-action requests, surfaces the exact `vigil approve sign` CLI); screen declared in .vigil-live/ui/system-map.json id=approvals",
+        "Governance screen \u2014 READ-ONLY gate/posture audit: GOVERNED vs UNGOVERNED entitlement, sovereignty tier + seal, the conjunctive safety-gate conjuncts, and the m-of-n destruction-quorum state; engine/crucible/framework/v2/console/api.py:1370 governance_data() ('cannot provision, authorize, or fire a governed action')",
+        "Remediation screen \u2014 'Proposed fixes and patches for confirmed findings; each queues for your approval' (.vigil-live/ui/system-map.json); backend integration/vigil_integration/remediation/codefix.py (edit/write=A2, sandbox build=A3, open-PR=A3 destructive + m-of-n quorum, deadline-bound)",
+        "Settings screen \u2014 apps/sigil/sigil/ui/settings.py CONFIG_META: bring-your-own-model + model picker (incl. keyless claude-code / local Ollama), reasoning effort, CRUCIBLE_SOVEREIGNTY_TIER (AIR_GAPPED/SOVEREIGN_CLOUD/TRUSTED_CLOUD/PERMISSIVE), CRUCIBLE_ANTHROPIC_ZDR, VIGIL_APPROVAL_WAIT_SECONDS; browser never holds key material (server-seals via SecretStore, spine records fingerprint only)",
+        "Brain screen \u2014 the propose-only decision engine (advisory surface); Budgets screen \u2014 per-tool token budget (warn+throttle, never hard-block); Strix runtime screen \u2014 pending WARDEN approval queue + kill controls (.vigil-live/ui/system-map.json)",
+        "Restricted mode (emergency-stop) \u2014 integration/vigil_integration/restricted_mode.py: a facade that TRIPS the existing per-engagement kill-switch so the conjunctive gate denies every mutating/target-touching action while read-only diagnosis/evidence/audit stay up; reachable from console actions.py (`vigil emergency-stop`). NOTE: this is a safety halt, distinct from the spec's local-only AI mode (that is CRUCIBLE_SOVEREIGNTY_TIER=AIR_GAPPED)."
+      ],
+      "stores_to_extend": [
+        "apps/sigil/sigil/ui/settings.py CONFIG_META \u2014 the settings store of record (owner-signed, server-sealed, env-delivered to both planes). Add the three new AI-feature toggles as VIGIL_* bool keys, default to CURRENT behavior (effectively ON) so the deployment is byte-identical when unset; group CRUCIBLE_SOVEREIGNTY_TIER + CRUCIBLE_ANTHROPIC_ZDR + the new toggles into a consumer 'AI governance' section",
+        "The per-org/per-tenant consumer settings store (plan Area 9/J2 assistant + wallet, Area 7/H identity) \u2014 for SERVER-SIDE persistence of the AI toggles per tenant (never browser localStorage), under default-deny RBAC + tenant isolation; wire alongside the existing org settings the assistant/wallet already read",
+        "An immutable, versioned POLICY ARCHIVE + acceptance-capture store (plan Area 6/G compliance artifacts) \u2014 to hold the AI-use policy text versions and capture which version a tenant/owner accepted; this is the 'capture + versioned archive + enforcement + page scaffolding' the task scopes (policy TEXT itself is owner_input). Reuse the compliance-artifacts surface; back it with the hash-chained spine primitive (vigil_core append_entry) used elsewhere so acceptance is tamper-evident"
+      ],
+      "true_gaps": [
+        "Per-feature AI enable/disable toggles (AI analysis / step-proposals / remediation) \u2014 NO granular on/off control exists today. Remediation is already A3+m-of-n APPROVAL-gated and Brain is propose-only, but there is no setting to DISABLE a whole AI capability class. True gap = 3 new CONFIG_META VIGIL_* bool keys + their settings UI + enforcement reads at the capability entry points; additive, default-ON, byte-identical when unset.",
+        "Flow-3 action-specific approval MODAL with a live expiry countdown \u2014 the pending data (tool/target/action_digest/nonce/created_at_iso) and the server-side expiry/replay rejection both exist; what is missing is the consumer modal that renders the bound action+target and counts down created_at_iso + VIGIL_APPROVAL_WAIT_SECONDS, then routes the owner to the OFF-BOX signer (CLI / sovereign cockpit / SIGIL phone companion). Thin presentation build only \u2014 must NOT add an in-browser signing route (keyless console is a FATAL-2 invariant).",
+        "Consumer-facing advisory-only NOTICE component \u2014 the demote-only/advisory enforcement is structural but no persistent banner is attached to AI-output surfaces (assistant answers, proposals, fix drafts). Presentation gap; copy is owner_input.",
+        "AI-use / model-data-handling POLICY PAGE + versioned acceptance capture \u2014 page scaffolding + immutable archive + acceptance capture do not exist as a consumer surface yet (the enforcement knobs ZDR + sovereignty tier + egress redaction do). Build the scaffolding/archive; the legal TEXT is owner_input.",
+        "Comprehensive secret redaction before egress \u2014 ai_gateway masks only recognized credential SHAPES; bare AWS keys / PEM / JWT / GitHub-Slack tokens / high-entropy strings / inline db-URL creds ride through. This is a documented honest limit, not a wiring gap; closing it is a redaction-layer enhancement, not UI, and should be flagged rather than claimed closed."
+      ],
+      "overlaps_inflight": [
+        "Area 9 / J / J2 (NL security assistant + wallet) \u2014 the PRIMARY consumer AI-output surface; the spec's advisory-only notice + no-external-training wiring + 'all model calls through ModelGateway (=vigil_core.ai_gateway)' land here; the assistant is already specced AI-advises/oracle-grounds/no-FACT-minted. Wire the HITL notice + toggles into this area, do not build a second assistant.",
+        "Area 10 (one-click proof-carrying fix / remediation) \u2014 already 'A3 destructive + m-of-n quorum, deadline-bound approval'; the remediation toggle and the prod-remediation sign-off map directly onto this in-flight area; extend its approval surface, do not rebuild the fix pipeline.",
+        "Area 6 / G (self-serve billing polish & COMPLIANCE ARTIFACTS) \u2014 the AI-policy page scaffolding + versioned archive + acceptance capture belong on this compliance-artifacts surface; reuse it for the policy archive store.",
+        "Settings / model plane (bring-your-own-model, keyless/local, CRUCIBLE_SOVEREIGNTY_TIER, CRUCIBLE_ANTHROPIC_ZDR) \u2014 the local-only/restricted AI mode and no-external-training toggles are this plane; extend its CONFIG_META group rather than adding a new settings system.",
+        "Area 7 / H (SSO / SCIM / enterprise identity, strix tenant) \u2014 supplies the tenant/org identity + default-deny RBAC needed to persist the AI toggles per-org server-side and to gate who may change them."
+      ],
+      "owner_input_needed": [
+        "Authoritative legal TEXT of the AI-use policy / AI acceptable-use addendum and the model-provider data-handling statement (seller/contracting entity = SIGIL SARL) \u2014 counsel-authored, do not fabricate; the build ships capture + versioned archive + enforcement + page scaffolding only.",
+        "The ZERO-DATA-RETENTION contract fact + terms for each model provider (is the Anthropic/OpenAI/Mistral key actually on a ZDR/no-training contract) \u2014 operational+legal fact the owner attests; CRUCIBLE_ANTHROPIC_ZDR is an attestation toggle, the underlying contract is owner input. Include the model-provider subprocessor entry.",
+        "Exact wording of the advisory-only notice and the 'no external training of secrets' consumer statement \u2014 owner/counsel copy.",
+        "Policy decision on the default STATE of each AI-feature toggle per plan/seat (seat price USD 25/seat/mo + taxes, Stripe) and whether any toggle is enterprise-restricted \u2014 owner product decision; recommend default-ON (byte-identical to today) with the OFF path additive."
+      ],
+      "notes": "VERDICT: this domain is overwhelmingly WIRE, not build. Every backend acceptance control for HITL governance already has real, tested enforcement: WARDEN A0-A3 classification (warden_tiers.py, byte-faithful to the SIGIL Rust kernel) routes intervention/isolation/credential-change/prod-remediation to QUEUE; the per-action owner-signed approval token (approval_token.py) binds exact (tool,target,action_digest), enforces a not_before/not_after dead-man's-switch window and a single-use nonce burned atomically (nonce_ledger O_EXCL); server-side rejection of expired/replayed approvals is already the code path (verify_token/consume_token + fireteam confirmation's replay-proof signed envelope); m-of-n with mandatory owner (destruction_gate.py) covers irreversible/prod; AI is structurally advisory \u2014 veracity firewall admit() is DEMOTE-ONLY and ai_gateway output-verify keeps the provider out of the trust root; and 'AI cannot self-authorize scope' is guaranteed because scope is a separately signed charter the AI cannot mint and a token upgrades queue->allow only (a deny stays a deny). The approvals()/governance_data() APIs and the Approvals/Governance/Remediation/Settings/Brain screens already exist to wire against. GENUINE gaps are narrow and additive: (1) three per-feature AI enable/disable toggles (new CONFIG_META VIGIL_* bools, default-ON, byte-identical when unset); (2) the flow-3 approval modal with a live expiry countdown over already-served data \u2014 with signing kept OFF-BOX (keyless console is FATAL-2); (3) a consumer advisory-only notice component; (4) the AI-policy page scaffolding + immutable versioned acceptance archive (text = owner_input). PRESERVE, never weaken: the conjunctive gate chain, demote-only FACT authority, signing/integrity, tenant isolation, RBAC default-deny, and the keyless-browser invariant. IMPORTANT honesty flag: do not claim 'no secrets ever leave' \u2014 ai_gateway redaction is shape-based with documented blind spots, and ZDR/'no external training' is a provider-contract attestation, not VIGIL-enforced; surface both truthfully. Two naming traps to avoid: VIGIL 'restricted mode' = emergency-stop (kill-switch halt), which is NOT the spec's local-only AI mode \u2014 that is CRUCIBLE_SOVEREIGNTY_TIER=AIR_GAPPED, which already exists as a settings enum with loopback-only egress lockdown. (Read-only audit; no files modified. Analysis excluded the .claude/worktrees/test-merged mirror and did not touch the named out-of-scope archive.)"
+    },
+    {
+      "domain": "privacy-data-lifecycle (Spec 1F + backend rule 7)",
+      "existing_enforcement": [
+        {
+          "requirement": "Right-to-erasure / deletion EXECUTOR (data-rights deletion; evidence destruction on workspace/account delete)",
+          "exists_where": "engine/crucible/framework/v2/agents/evidence_erasure.py (erase_engagement_evidence + CLI `python3 -m framework.v2 erase-evidence --engagement <slug> --yes`), engine/crucible/framework/v2/common/crypto_shred.py (per-engagement AES-256-GCM DEK seal + EvidenceKeyring.shred), ADR knowledge/decisions/0008-crypto-shred-erasure-for-append-only-evidence.md. Append-only spine rows are NEVER deleted; a signed tombstone is appended; erasure = destroy the DEK so sealed ciphertext (incl. off-host backups) is cryptographically unrecoverable.",
+          "wire_or_build": "WIRE. This is the sanctioned deletion primitive and MUST be reused, never paralleled. It is ENGAGEMENT-scoped; the build is a subject/workspace-scoped ORCHESTRATOR that enumerates a subject's/tenant's engagements and calls it. Adding any spine DELETE/UPDATE would break the append-only tamper-evidence invariant (refused by SQLite triggers)."
+        },
+        {
+          "requirement": "Revoke ALL integration tokens/creds on account/workspace deletion",
+          "exists_where": "RBAC revoke verbs in apps/sigil/sigil/governor/accounts.py (revoke_account, revoke_all_teammates=bulk revoke every non-owner, revoke_sessions=sign out ALL cookie sessions, revoke_bootstrap_token, revoke_webauthn) with LWW anti-replay high-water; vigil_core/rbac.py role vocab. Integration secrets sealed+revocable via apps/sigil/sigil/ui/settings.py SECRET_META (LLM/cloud/GITHUB_TOKEN, SecretStore keyring->TPM->0600). Connected repos owner-signed + disconnectable in connected_repo_record.py via issued_at high-water (in-flight connect-C).",
+          "wire_or_build": "WIRE the existing revoke primitives behind one delete flow. The per-primitive revokes EXIST and are sound; the unified 'revoke everything for this subject/workspace' orchestration is the gap. Must also enumerate G-Stripe customer and H-SSO/SCIM tokens as those land."
+        },
+        {
+          "requirement": "Immutable, versioned policy ARCHIVE + ENFORCEMENT + page scaffolding (Privacy / DPA / Retention / AUP / AI / Subprocessors / Cookie policy)",
+          "exists_where": "W14-2 authority.counsel_review (docs/decisions/W14-2-counsel-review-enforcement.md): find_placeholders scanner + counsel-review-status.json manifest (every entry defaults PENDING/false, fail-closed on missing/malformed) + assert_shippable/ship_instruments CONJUNCTIVE fail-closed ship-gate (counsel-reviewed AND zero placeholders). DRAFT instruments at engine/crucible/framework/templates/legal/{dpa.md,nda.md} (marked PENDING, carry [GOVERNING LAW]). Shipped scaffolding: PRIVACY.md, ACCEPTABLE-USE.md, TERMS.md. Governing law resolved to Republic of Cameroon (Delaware move planned), counsel review PENDING.",
+          "wire_or_build": "WIRE. Register the privacy/cookie/retention/AI/subprocessor/AUP pages as instruments in the SAME counsel-review manifest + placeholder scanner + ship-gate; extend find_placeholders allowlist. Build only page scaffolding + version-pinning. Legal TEXT and the counsel sign-off are owner_input, NOT to fabricate."
+        },
+        {
+          "requirement": "Workspace data export (archive of reports/findings/metadata; access + portability)",
+          "exists_where": "Per-run exporters EXIST: `vigil proof-export` (offline proof bundle) and `vigil dossier` (dossier.zip) at integration/vigil_integration/cli.py:2251-2288; report.adapt.adapt_scan_export + _write_findings_json at engine/crucible/framework/v2/console/actions.py:397-421; `vigil backup` = full-machine portable encrypted archive (integration/vigil_integration/backup.py). NONE aggregate at workspace/subject/tenant scope.",
+          "wire_or_build": "WIRE/AGGREGATE. Build a workspace-export that iterates the tenant's runs and REUSES the existing per-run serializers; do not re-serialize findings. The new part is the subject/tenant-scoped aggregation and a machine-readable portability format."
+        },
+        {
+          "requirement": "Retention periods per class (raw captures / reports / secrets / audit logs)",
+          "exists_where": "tools/backup/retention.py (`vigil backup --prune --keep-days N --keep-last M`) is the ONLY timer-based retention and is backups-ONLY (conservative: never deletes newest/sole, no-op without explicit policy). Audit-log 'retention' = append-only spine (never deleted) + crypto-shred. All other classes INDEFINITE by design, each documented with path:line in docs/legal/DATA-RETENTION.md + DATA-GROUND-TRUTH.md (docs/data-ground-truth/data-stores.json is the source-of-truth catalog). `--ephemeral` tmpfs-purge for captures exists but ONLY on the engine CLI, not `vigil engage`/UI.",
+          "wire_or_build": "MOSTLY BUILD the per-class retention-policy config + sweeper, but WIRE execution to the two existing executors (retention.prune for backups; erase-evidence/crypto-shred for captures). The audit-log class is NOT TTL-deletable by design: the honest model is immutable + crypto-shred, never a spine DELETE."
+        },
+        {
+          "requirement": "Cookie preferences modal (equal-prominence Accept-All/Reject-Optional/Customize, no optional pre-selected, block non-essential scripts until consent stored)",
+          "exists_where": "Today exactly ONE strictly-necessary cookie: sigil_session (HttpOnly + SameSite=Strict + Secure-in-prod, server-side revocable ledger) at apps/sigil/sigil/ui/server.py:197-233. Strict CSP `default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'` (server.py:54) means NO third-party/analytics scripts load at all. UI has a reusable consent-dialog idiom (egressConsent in packages/vigil-ui/app.js). No consent store, no modal.",
+          "wire_or_build": "BUILD the modal + a stored consent record. Enforcement risk is LOW today (no non-essential scripts exist), but the consent store + 'block-until-consent' gate MUST precede any future analytics/marketing script. The strict CSP is a positive existing control to preserve."
+        },
+        {
+          "requirement": "Marketing opt-in (separate control, OFF by default)",
+          "exists_where": "No marketing/email-send system exists (grep: no sendgrid/mailgun/campaign/newsletter sender; only apps/sigil/sigil/agents/envoy.py FYI classifier + one test fixture). OFF-by-default is currently true by ABSENCE.",
+          "wire_or_build": "BUILD a separate marketing-consent toggle + stored record (default OFF), distinct from the cookie-consent record and from the egress-consent idiom. No existing marketing pipeline to wire to."
+        },
+        {
+          "requirement": "Data-rights request form (access/correction/deletion/portability/objection)",
+          "exists_where": "No intake/tracking workflow. Fulfillment primitives PARTIALLY exist: access/portability approx= export (proof-export/dossier/backup), deletion approx= erase-evidence/crypto-shred; correction/objection have NO primitive. engine/crucible/framework/templates/legal/dpa.md references data-subject requests as legal text only.",
+          "wire_or_build": "BUILD the request intake + status-tracking as owner-signed spine records; WIRE fulfillment to the existing export + erase-evidence primitives. Correction/objection are likely a manual-operator workflow (no primitive)."
+        }
+      ],
+      "existing_ui": [
+        "apps/sigil/sigil/ui/server.py \u2014 strict-CSP, same-origin, per-user-auth HTTP surface where new /api/privacy, /api/consent, /api/data-rights endpoints would mount; sigil_session cookie + server-side revocable session ledger already live here (lines 187-233, 735-747)",
+        "apps/sigil/sigil/ui/settings.py \u2014 owner-signed Settings screen (SECRET_META integration-cred inventory + MODEL_CHOICES); natural home for account/data controls and the 'revoke all integration creds' action",
+        "packages/vigil-ui/app.js \u2014 the no-build consumer UI; already ships 'Sign out ALL cookie sessions' (~line 5000, wired to revoke_sessions), per-attachment egressConsent modal, tool-install consent, backup-passphrase escrow opt-in \u2014 reusable idioms for the cookie modal and marketing toggle",
+        "integration/vigil_integration/uiproxy.py \u2014 the consumer plane router (private-peer + Host/Origin anti-rebind + per-user auth + bootstrap-route allowlist) where a new /api/privacy|/api/data-rights|/api/consent route is gated; already hosts the Stripe/GitHub webhook spools (in-flight G)"
+      ],
+      "stores_to_extend": [
+        "packages/core/vigil_core/vigil_core/spine_domains.py DOMAIN_TAGS \u2014 add DISTINCT owner-signed domain tags for: cookie-consent, marketing-consent, retention-policy config, data-rights request, account/workspace deletion-schedule, legal-hold. Mirror the connected-repo / shard-assignment fail-closed signed-record idiom (domain-separated canonical bytes, issued_at anti-replay high-water, keyless verify).",
+        "counsel-review-status.json manifest + authority.counsel_review (W14-2) \u2014 register the privacy/cookie/retention/AI/subprocessor/AUP policy pages as instruments; extend find_placeholders coverage. This is the immutable+versioned+enforced policy-archive mechanism to reuse, not rebuild.",
+        "apps/sigil/sigil/ui/settings.py SECRET_META \u2014 the canonical integration-cred inventory that 'revoke all tokens/creds' enumerates on delete.",
+        "engine/crucible/framework/v2/agents/evidence_erasure.py / `erase-evidence` + common/crypto_shred.py \u2014 the deletion EXECUTOR a subject/workspace deletion and a data-rights-deletion orchestrate across engagements.",
+        "tools/backup/retention.py \u2014 the retention-prune executor; extend the policy surface and record the adopted schedule in docs/legal/DATA-RETENTION.md \u00a75 (the data-store catalog docs/data-ground-truth/data-stores.json stays the source of truth).",
+        "report.adapt.adapt_scan_export / proof-export / dossier serializers \u2014 reuse (do not re-implement) for the workspace-export aggregator."
+      ],
+      "overlaps_inflight": [
+        "G (billing) \u2014 delete-account must cancel the subscription (W-series already stops renewals; auto-recharge OFF-by-default) and close/revoke the Stripe customer (uiproxy /webhooks/stripe + billing-drain, VIGIL_STRIPE_* env); the backup-expiry notice touches invoice/billing-record retention. Seller/contracting entity = SIGIL SARL.",
+        "J/J2 (wallet/assistant) \u2014 account/workspace deletion must release/refund OPEN credits (ledger states Reserved/Consumed/Released/Refunded/Promotional in credit_lease.py/model_metering.py); the wallet balance + ledger is part of the workspace-data-export archive.",
+        "C (connect/ownership-proof) \u2014 delete-account must disconnect ALL connected_repo_record repos (revoke via issued_at high-water + GitHub App uninstall); connected-repo tokens are integration creds the revoke-all must cover.",
+        "H (SSO/SCIM) \u2014 SCIM deprovision IS an account-lifecycle deletion path and must coordinate with data-rights deletion; the org/tenant boundary (shard_assignment_record, tenant_id==org_id) DEFINES the workspace scope that export/delete/retention operate over; SSO tokens join the revoke-all set.",
+        "A (presentation, merged) \u2014 the legal/policy pages, the cookie modal, the marketing toggle and the data-rights form all render in this surface.",
+        "I (proof badge) + standards_mirror.json \u2014 the compliance/standards-chip surface where a GDPR/privacy control mapping would display (presentation/mapping only \u2014 it asserts nothing and touches no FACT/oracle verdict; not an enforcement path)."
+      ],
+      "owner_input_needed": [
+        "Authoritative legal TEXT (do NOT fabricate): Privacy Policy, Cookie Policy, Retention Schedule, DPA (DRAFT exists, counsel PENDING), Subprocessor list, AUP (ACCEPTABLE-USE.md draft), AI disclosure/policy \u2014 ship the CAPTURE + versioned archive + enforcement + scaffolding, mark text PENDING.",
+        "The adopted retention PERIODS per class (raw captures / reports / secrets / audit logs) \u2014 DATA-RETENTION.md \u00a75 offers a starting point but the actual numbers are the operator's to set.",
+        "Counsel sign-off (flip the W14-2 reviewed flag per instrument) + governing-law resolution (currently Republic of Cameroon; Delaware move planned) \u2014 human actions the framework cannot perform.",
+        "Data-controller/processor identity + legal-basis statements for the privacy notice \u2014 controller/seller = SIGIL SARL.",
+        "Classification of the local read-only status-file telemetry (server.py) as essential vs non-essential for the cookie banner.",
+        "Policy decision on legal-hold scope/triggers and the deletion grace-period length."
+      ],
+      "true_gaps": [
+        "Cookie preferences modal + stored consent record (equal-prominence Accept-All / Reject-Optional / Customize, NO optional pre-selected) and a 'block non-essential scripts until consent stored' gate \u2014 NONE today (only strictly-necessary sigil_session + strict CSP).",
+        "Marketing opt-in toggle + stored record, default OFF, SEPARATE from cookie consent and from the egress-consent idiom \u2014 no marketing system exists at all.",
+        "Data-rights request intake + status-tracking workflow (access / correction / deletion / portability / objection) \u2014 NONE; fulfillment would wire to existing export + erase-evidence; correction/objection have no primitive.",
+        "Workspace/subject-scoped data-export AGGREGATOR (archive of reports/findings/metadata) \u2014 only per-run proof-export/dossier + full-machine backup exist.",
+        "Unified account/workspace DELETE orchestration = revoke-all-tokens/creds + schedule deletion + backup-expiry notice + legal-hold exception \u2014 the per-primitive revokes and crypto-shred erasure EXIST, the orchestrator does not.",
+        "Deletion scheduler with grace period \u2014 NONE (grep: no schedule_deletion / deletion-pending primitive).",
+        "Legal-hold / litigation-hold exception flag that suspends deletion + retention sweeps \u2014 NONE (grep empty).",
+        "Per-class retention-policy config + sweeper for raw captures / reports \u2014 only backups have a timer; every other class is indefinite by design.",
+        "Signed-spine domain tags for consent / retention-policy / data-rights / deletion-schedule / legal-hold \u2014 no such DOMAIN_TAGS entries exist yet."
+      ],
+      "notes": "GROUND TRUTH: this domain is ~80% greenfield UI + orchestration sitting on a SOLID, already-sound enforcement spine \u2014 not a from-scratch build and definitely not a weaker parallel path. The load-bearing primitives that MUST be wired to (never rebuilt): (1) crypto-shred erasure (ADR-0008, erase-evidence) as the ONLY sanctioned deletion mechanism \u2014 the event spine is append-only by SQLite trigger + signed hash chain, so deletion = destroy the DEK, NEVER a DELETE; (2) RBAC revoke verbs + SecretStore for credential/token revocation; (3) the W14-2 counsel-review ship-gate (placeholder scanner + per-instrument reviewed manifest, fail-closed) as the immutable+versioned+enforced policy archive \u2014 the DPA already ships as a gated DRAFT; (4) tools/backup/retention.py as the retention executor; (5) proof-export/dossier serializers for export. The exact current data-lifecycle state is already documented with path:line citations in docs/legal/DATA-RETENTION.md and docs/data-ground-truth/data-stores.json (the drift-tested source of truth) \u2014 build against those, they are authoritative.\n\nHONEST LIMIT on erasure to carry into the UI copy (from PRIVACY.md): on-disk evidence is sealed-at-erasure and crypto-shredded; the proof-path reverifiable context is sealed at rest; but seal-at-capture for scanner-path spine excerpts (ResultPayload.body_excerpt / ObservationPayload.raw_excerpt) and scanner error_observed is a NAMED residual still partly plaintext \u2014 a right-to-erasure UI must not over-claim unrecoverability of those. Also: a completed spine prune deliberately carries forward per-account state (username/role/cred_hash/salt/pubkey) for replay defense \u2014 'a prune erases content; it does not erase a person' \u2014 so account-level erasure claims need the crypto-shred framing, not spine deletion.\n\nCONSTRAINTS HONORED: every new store/flow must be additive and default-OFF behind a VIGIL_* flag, byte-identical when off. New records = owner-signed, domain-separated spine records (reuse the connected-repo/shard-assignment idiom in spine_domains.py; distinct DOMAIN_TAGS so a consent/retention/data-rights signature can never replay as any other). Preserve and never weaken: the conjunctive gate chain, FACT-minting authority (AI advisory/demote-only), signing/integrity, tenant isolation (tenant_id==org_id==shard scope), RBAC default-deny. Branch context: current branch meridian-s5-expansion; the in-flight consumer PRs are claude/consumer-prA..prL and claude/billing-* (all dated 2026-11-19) \u2014 there is NO privacy/cookie/retention/data-rights PR among them, confirming the task hypothesis that this domain is mostly new. Report is READ-ONLY; nothing edited/written/committed; ARTEX-main.zip never touched."
+    },
+    {
+      "domain": "legal-agreements",
+      "existing_enforcement": [
+        {
+          "requirement": "Immutable, versioned accepted-agreements archive (timestamp, actor, org, language; exact text retrievable after new versions)",
+          "exists_where": "/home/kali/vigil/apps/sigil/sigil/spine/store.py::SpineStore.append \u2014 append-only, hash-chained (prev_hash/entry_hash), content-field AEAD-at-rest, fail-closed KINDS write-vocabulary gate, owner-signed anti-rollback head + witness roster. The owner-signed governance-signal idiom already used for accounts and attestations: /home/kali/vigil/apps/sigil/sigil/governor/authn.py::signed_payload + store.append (see governor/accounts.py 'governor.account' and ui/target_authorization.py LIVE_ATTESTATION_SIGNAL). Records are never mutated, so immutability + retrievability-after-new-version is inherent.",
+          "wire_or_build": "WIRE: reuse the spine as the archive. BUILD: a new owner-signed 'legal.acceptance' governance signal appended inside the existing signup transaction; no new storage engine. Preserve owner-signed head / witness / KINDS gate exactly."
+        },
+        {
+          "requirement": "EXACT text snapshot retrievable even after a new policy version ships (immutable text ref)",
+          "exists_where": "Content-addressing convention exists: /home/kali/vigil/apps/sigil/sigil/ui/static_site.py::SiteSnapshot (sha256[:12] per asset + a build-id digest). BUT the snapshot is the CURRENT tree only \u2014 it is read once at startup and superseded versions are not retained on redeploy, so it does NOT by itself satisfy 'retrievable after new versions'.",
+          "wire_or_build": "BUILD: a durable content-addressed policy-version archive keyed (doc_id, version, language, sha256) that retains the exact text bytes of every shipped version; the spine acceptance record stores the sha256 digest (immutable by chain), the archive stores the bytes. Reuse the sha256 content-address convention from static_site.py."
+        },
+        {
+          "requirement": "Signup affirmative (unchecked-by-default) ToS/AUP checkbox; store doc id/version/language/timestamp/actor/immutable-text-ref; fail-closed if not accepted",
+          "exists_where": "Signup transaction EXISTS and already writes an owner-signed, fail-closed, idempotent audit under the txn lock: /home/kali/vigil/apps/sigil/sigil/ui/provision.py::Provisioner._signup_commit (+ _audit(critical=True)). Reusable electronic-acceptance capture pattern exists THREE times but none captures doc/version/language/text-ref: (a) provision.py _audit(attestation=True) -> payload['authorization_affirmed']=True, a customer inline affirmation bound to requester+org+target+ts on the owner-signed spine, REQUIRED + fail-closed at provision.py ~line 2288-2312; (b) /home/kali/vigil/apps/sigil/sigil/ui/target_authorization.py owner-signed EngagementAuthority (actor/scope/window, signed, recorded as a spine signal); (c) /home/kali/vigil/apps/sigil/sigil/ui/login_challenges.py single-use challenge-consume PoP primitive. No ToS/AUP consent is captured at signup today.",
+          "wire_or_build": "WIRE into _signup_commit: append the acceptance record in the SAME owner-signed, fail-closed, idempotent transaction; use server-set timestamp/actor exactly like the existing signup audit; make the signup REFUSE without a valid affirmative acceptance, mirroring the existing REQUIRED+fail-closed authorization_affirmed gate. BUILD: the acceptance payload fields (doc_id, version, language, text-digest ref) + the unchecked-by-default checkbox UI in customer_app + the custui relay field."
+        },
+        {
+          "requirement": "Policy page routes (/legal/terms,/legal/billing,/legal/acceptable-use,/legal/privacy,/legal/dpa,/legal/subprocessors,/legal/retention,/legal/ai,/legal/company,/legal/abuse,/legal/open-source,/security,/security/disclosure)",
+          "exists_where": "Public plane EXISTS and is the right home: /home/kali/vigil/apps/sigil/sigil/ui/pubui.py (keyless, cookieless, offense-free, GET/HEAD-only static server, strict CSP, path-traversal-safe, behind reverse proxy on a separate marketing vhost; VIGIL_PUBLIC_PORT). Content root /home/kali/vigil/apps/sigil/sigil/ui/public_site/ today serves ONLY /privacy, /cookies, /trust, /support, /.well-known/security.txt \u2014 flat routes, NOT /legal/*. Catalog/sitemap/robots infra present.",
+          "wire_or_build": "WIRE to pubui/public_site (drop static pages + sitemap entries; serving infra is done). BUILD: the ~10 missing policy pages as scaffolding and reconcile route naming (existing flat /privacy vs spec /legal/privacy \u2014 add /legal/* paths or redirects). Page TEXT is owner_input."
+        },
+        {
+          "requirement": "Privacy notice shown SEPARATELY (as a notice, not an affirmative acceptance)",
+          "exists_where": "/privacy page already served by pubui (/home/kali/vigil/apps/sigil/sigil/ui/public_site/privacy/index.html). The signup presentation does not yet distinguish shown-notice from affirmative-acceptance.",
+          "wire_or_build": "WIRE: link/show the privacy notice at signup distinct from the ToS/AUP checkbox; UI-only, no new store."
+        },
+        {
+          "requirement": "Policy versioning + 'only counsel-approved version is live' governance",
+          "exists_where": "EXISTS but scoped to offense instruments only: /home/kali/vigil/engine/crucible/framework/v2/authority/counsel_review.py ship-gate + /home/kali/vigil/engine/crucible/framework/templates/legal/counsel-review-status.json (per-instrument reviewed_by_counsel flag AND an independent placeholder scan; refuses to ship unreviewed/placeholder text). Covers authorization-letter/NDA/DPA; records governing law = Republic of Cameroon (Delaware move planned).",
+          "wire_or_build": "WIRE/EXTEND this registry to the consumer product policies so only counsel-approved, placeholder-free versions are published and referenced by acceptance records. Legal text stays owner/counsel input."
+        },
+        {
+          "requirement": "Separate OPTIONAL marketing checkbox (distinct from ToS/AUP, revocable)",
+          "exists_where": "No marketing-consent / email-preference field exists anywhere on main (verified absent). Per-account stores that could carry it exist: /home/kali/vigil/apps/sigil/sigil/governor/customers.py and /home/kali/vigil/apps/sigil/sigil/governor/customer_credentials.py.",
+          "wire_or_build": "BUILD: an optional, default-unchecked marketing opt-in stored as a per-account, revocable preference \u2014 never bundled with the ToS/AUP affirmative acceptance."
+        }
+      ],
+      "existing_ui": [
+        "Public marketing/legal plane served by pubui.py from public_site/: /privacy, /cookies, /trust, /support, /.well-known/security.txt (flat routes; static HTML already written as drafts).",
+        "Customer app shell (/home/kali/vigil/apps/sigil/sigil/ui/customer_app/) and the cookie-bearing customer edge custui.py (VIGIL_CUSTOMER_PORT) that relays signup/billing to the sovereign Provisioner \u2014 the surface a signup consent checkbox + 'view my accepted agreements' screen attach to.",
+        "Operator console signup dispatch at /home/kali/vigil/apps/sigil/sigil/ui/server.py (request_signup / confirm_signup / confirm_signup_code) \u2014 the server-side funnel to wire consent through.",
+        "Draft policy source texts exist as repo .md (NOT counsel-approved): TERMS.md, PRIVACY.md, ACCEPTABLE-USE.md, SECURITY.md, docs/legal/DATA-RETENTION.md, framework/templates/legal/dpa.md, nda.md \u2014 usable to seed page content pending counsel."
+      ],
+      "overlaps_inflight": [
+        "consumer-prA-presentation (MERGED to main): public_site + customer_app + pubui/custui are exactly the planes the legal pages and signup checkbox attach to.",
+        "consumer-prH-sso (SCIM/SSO; branch-only governor/scim.py, scim_directory.py, ui/scim.py, plus OIDC in ui/oidc.py): the federated/SCIM-provisioned signup path bypasses the interactive signup checkbox -> needs org-level ToS/DPA acceptance capture, not just the self-serve checkbox.",
+        "consumer-prG-billing + W-series/A1 checkout (ui/billing.py, governor/billing*.py): /legal/billing page + billing-terms acceptance at checkout; note test_billing_provider_agreement.py is PROCESSOR selection (Stripe vs Flutterwave), NOT a legal-terms acceptance.",
+        "consumer-prC-connect (ownership-proof): shares the provision._audit authorization_affirmed attestation pattern \u2014 the exact capture shape to reuse for consent.",
+        "consumer-prJ/J2 (assistant/wallet): drives the /legal/ai AI-use policy page and any assistant-specific terms.",
+        "onboarding tour (branch-only ui/onboarding_store.py): a per-account UI preference explicitly NOT a signed record \u2014 must NOT be conflated with legal consent; consent is a signed spine record, the tour flag is not."
+      ],
+      "stores_to_extend": [
+        "/home/kali/vigil/apps/sigil/sigil/spine/store.py (SIGIL spine): add owner-signed 'legal.acceptance' governance records via the existing append + signed_payload idiom; reuse head/witness/anti-rollback.",
+        "/home/kali/vigil/packages/core/vigil_core/vigil_core/spine_domains.py DOMAIN_TAGS: add a 'legal-acceptance' domain-separation tag so a consent signature can never replay under another purpose; /home/kali/vigil/apps/sigil/sigil/spine/models.py KINDS only if a new kind is chosen (else reuse 'event').",
+        "/home/kali/vigil/apps/sigil/sigil/ui/provision.py (_signup_commit + _audit): thread the consent payload through the existing owner-signed, fail-closed, idempotent signup transaction.",
+        "/home/kali/vigil/apps/sigil/sigil/governor/customers.py and customer_credentials.py: add the optional marketing opt-in as a per-account revocable preference.",
+        "/home/kali/vigil/apps/sigil/sigil/ui/public_site/ + static_site.py catalog + sitemap.xml + pubui.py route map: add the policy pages (and /legal/* path reconciliation).",
+        "NEW durable content-addressed policy-version archive (doc_id, version, language, sha256, exact bytes) referenced by the acceptance digest \u2014 the one genuinely new store.",
+        "/home/kali/vigil/engine/crucible/framework/v2/authority/counsel_review.py + framework/templates/legal/counsel-review-status.json: extend the ship-gate/versioning registry to consumer product policies.",
+        "custui edge (/home/kali/vigil/apps/sigil/sigil/ui/custui.py) + server.py signup dispatch: relay the new consent fields; extend BOOTSTRAP_PATHS + integration/vigil_integration/uiproxy.py _UNAUTH_FORWARD ONLY if a new pre-auth route is added."
+      ],
+      "true_gaps": [
+        "Owner-signed 'legal.acceptance' spine signal + 'legal-acceptance' DOMAIN_TAG capturing doc_id, version, language, actor, org, server-timestamp, and an immutable text-digest ref \u2014 does not exist.",
+        "Durable content-addressed policy-version archive that retains the EXACT text bytes of superseded versions (static_site snapshot is current-tree-only) \u2014 the single genuinely new store.",
+        "Signup affirmative, unchecked-by-default ToS/AUP checkbox capture + a fail-closed signup gate wired into _signup_commit \u2014 not present (only the unrelated per-target authorization_affirmed affirmation exists).",
+        "~10 missing policy pages: /legal/terms, /legal/billing, /legal/acceptable-use, /legal/dpa, /legal/subprocessors, /legal/retention, /legal/ai, /legal/company, /legal/abuse, /legal/open-source, /security, /security/disclosure \u2014 plus /legal/* route-naming reconciliation vs existing flat /privacy,/cookies,/trust.",
+        "Separate optional marketing opt-in field (default off, revocable) \u2014 none exists.",
+        "Privacy-notice-shown-separately at signup (page exists; signup presentation does not distinguish notice from affirmative acceptance).",
+        "Federated/SCIM (org-level) consent capture for users provisioned without the interactive signup checkbox (overlaps consumer-prH-sso).",
+        "Extending the counsel-review ship-gate/versioning from offense instruments (authorization-letter/NDA/DPA) to the consumer product policies.",
+        "User/org self-service UI to view their own accepted-agreement history and retrieve the exact accepted text version.",
+        "Re-consent policy + flow when a new policy version supersedes an accepted one (which version-bumps force re-acceptance)."
+      ],
+      "owner_input_needed": [
+        "Authoritative legal TEXT of every policy (Terms, AUP, DPA, Privacy, Subprocessors, Retention, AI-use, Billing, Company, Abuse, Open-source) \u2014 explicitly NOT to fabricate; counsel-review-status.json already marks the existing instruments PENDING (reviewed_by_counsel=false). Seller/contracting entity = SIGIL SARL; governing law currently Republic of Cameroon with a Delaware move planned.",
+        "The subprocessor list (for /legal/subprocessors) and the concrete retention schedule (for /legal/retention).",
+        "Which policies require AFFIRMATIVE acceptance (spec: ToS + AUP) vs shown-notice (privacy) vs org-level signature (DPA for enterprise/SCIM tenants).",
+        "Marketing/email-sender compliance copy + unsubscribe mechanics for the optional marketing opt-in.",
+        "Re-consent policy: which version increments force existing users to re-accept, and the grace/lockout behavior.",
+        "Counsel sign-off (flip reviewed_by_counsel=true) on each version before it may be published or referenced by an acceptance record."
+      ],
+      "notes": "VIGIL has THREE UI planes on main: the loopback/private operator console (ui/server.py), a keyless/cookieless PUBLIC marketing+legal plane (pubui.py serving public_site/, VIGIL_PUBLIC_PORT), and a cookie-bearing CUSTOMER edge (custui.py, VIGIL_CUSTOMER_PORT) that relays to the owner-key Provisioner. Working tree is on branch meridian-s5-expansion; the presentation+signup+billing surface (public_site, customer_app, provision.py, billing.py, pubui/custui) is on main (consumer-prA merged); onboarding_store/scim/shard_on_signup/billing-reversal remain branch-only in-flight.\n\nThe ENFORCEMENT spine the build must WIRE to already exists and is strong: an append-only, hash-chained, owner-signed, witness-anchored spine with a fail-closed KINDS write gate and domain-separated signatures; the signup transaction (_signup_commit) already appends an owner-signed, fail-closed, idempotent audit under a txn lock; and three reusable electronic-acceptance patterns exist (provision._audit authorization_affirmed inline affirmation; target_authorization.py owner-signed EngagementAuthority; login_challenges single-use PoP). So legal consent is a NEW signed record appended through EXISTING machinery, not a new trust primitive.\n\nThe TRUE gaps are: the legal.acceptance signal itself (doc/version/language/actor/org/ts/text-ref), a durable content-addressed archive of exact superseded policy text, the signup ToS/AUP affirmative-unchecked capture + fail-closed gate, the ~10 missing policy pages, a separate optional marketing opt-in, federated/SCIM org-level consent, and self-service retrieval/re-consent UI. All are additive and belong behind a new default-OFF VIGIL_* flag (matching customer_checkout_enabled / customer_oidc_enabled), byte-identical when off.\n\nConstraints honored in the plan: do NOT weaken the gate chain, FACT-minting authority (AI advisory/demote-only), signing/integrity, tenant isolation, or RBAC default-deny; the consent record is owner-signed like every other governance mutation (a non-owner principal never produces a signature); the onboarding tour flag is NOT consent. Policy TEXT is owner/counsel input (counsel_review.py ship-gate already enforces no-unreviewed/placeholder shipping) and must be marked owner_input_needed, never fabricated. All paths are under /home/kali/vigil (READ-ONLY audit; nothing was modified)."
+    },
+    {
+      "domain": "settings-shell-ui",
+      "existing_enforcement": [
+        {
+          "requirement": "A persisted, typed, signed, audit-logged settings WRITE surface (the exact capability the spec wants for a '7-tab persisted audit-logged settings surface')",
+          "exists_where": "apps/sigil/sigil/ui/settings.py: set_config() -> _validate_config_typed() (closed typed allowlist CONFIG_META/CONFIG_VARS, settings.py:339/459; int-range/url/cidr/host/enum validation, refuses unknown var) -> _persist_env() (atomic os.replace into 0600 ~/.sigil/sigil.env, settings.py:654) -> _record_signed_event() (settings.py:702: store.append(kind='event', source='governor', actor='SETTINGS', payload=signed_payload(..., owner_key)) onto the hash-chained Ed25519 spine, returns recorded_seq).",
+          "wire_or_build": "WIRE. This is a ready-made persisted+signed+audited config pipeline. Reuse it verbatim for scalar settings (add CONFIG_META entries); for structured records add ONE new signed signal kind. Do NOT build a second/weaker writer."
+        },
+        {
+          "requirement": "Every settings mutation is owner-signed and RBAC-admitted BEFORE the owner key signs (no AI/browser can mint a change)",
+          "exists_where": "UI settingsAct() -> V.postJSON(SOV('/api/action')) (app.js:4545). Sovereign do_action() runs the RBAC admission gate FIRST, then signs with the server-held owner key (apps/sigil/sigil/ui/actions.py:47). Verb->permission map PERMISSION_BY_ACTION (apps/sigil/sigil/governor/accounts.py:96; set_config/set_model/set_effort/set_provider=config_nonsecret, set_secret=secrets, account verbs=manage_users). Vocabulary + default-deny role_can in packages/core/vigil_core/vigil_core/rbac.py.",
+          "wire_or_build": "WIRE. Add any NEW settings verb to the closed ACTIONS frozenset (actions.py:41), map it in PERMISSION_BY_ACTION, and implement it in do_action. The browser/AI only sends a REQUEST; the server is the signer+enforcer. Never add an unguarded write endpoint."
+        },
+        {
+          "requirement": "Secret CAPTURE without exposure (for API-keys / credential tabs), fingerprint-only on the spine",
+          "exists_where": "settings.py SECRET_META closed allowlist + platform/secrets.py SecretStore (keyring -> TPM-sealed -> 0600 envfile). set_secret records only _fingerprint() (sha256:12, settings.py) on the spine; value never returned to browser and never on the spine (proven by apps/sigil/tests/test_ui_settings.py:50-114).",
+          "wire_or_build": "WIRE. Reuse set_secret/SecretStore for any sealed field (perm 'secrets', owner-only). Do not echo or log secret values; keep the fingerprint-only invariant."
+        },
+        {
+          "requirement": "AI/model outputs cannot modify permissions or approve actions (preserve demote-only + owner-signed authority)",
+          "exists_where": "verify/firewall.py demote-only; SIGIL owner-Ed25519 governor (kill-switch+budgets+per-KIND promotion); per-action A3 + m-of-n. In the settings path specifically, the AI never has a write hop: the UI posts a request and the SERVER (owner key) signs. Provenance honesty gate isFact()=verified_by_oracle (app.js:500).",
+          "wire_or_build": "PRESERVE (no build). Settings tabs stay request-only; keep the Governance/Authorization tab READ-ONLY (it mirrors status, cannot provision/authorize/fire). Do not introduce an AI-driven settings write."
+        },
+        {
+          "requirement": "Scope/exclusions, expired/revoked-auth blocking, out-of-scope/new-host refusal, kill-switch, egress floor (surfaced, read-only, in a Governance/Authorization settings tab)",
+          "exists_where": "vigil_core/gate.py conjunctive_decide; engine agents/egress_guard.py; authority/gate.py; ui/target_authorization.py + wiring.py provision_authority; MERIDIAN range control. Existing read-only 'governance' screen already renders tier/conjunctive-gate/kill-switch/m-of-n (knowledge/system-map/screens.yaml:264 states 'The UI cannot provision, authorize, or fire a governed action').",
+          "wire_or_build": "WIRE read-only. A settings Governance/Authorization tab reuses existing read routes (OFF('/api/governance'), etc.) and links to the charter/safety/durability screens. Build nothing new on the enforcement side."
+        },
+        {
+          "requirement": "Multi-user accounts + roles (Users/Roles settings tab)",
+          "exists_where": "apps/sigil/sigil/governor/accounts.py (owner-signed spine grants; ROLES viewer<analyst<operator<owner re-exported from vigil_core.rbac). Existing 'users' screen renderUsers (app.js:4939, NAV perm manage_users). Account verbs create_account/assign_role/revoke_account/revoke_all_teammates already in ACTIONS + PERMISSION_BY_ACTION.",
+          "wire_or_build": "WIRE. The Users/Roles tab reuses the existing users screen + account actions. Do not fork a parallel user store."
+        },
+        {
+          "requirement": "Idempotent billing / seat subscription / cancel-stops-renewal / auto-recharge OFF-by-default (Billing settings tab)",
+          "exists_where": "IN-FLIGHT, NOT in sovereign core. apps/sigil/sigil/governor/budget.py is token-COST metering only (prices.json/budgets.json, cost frozen into spine records) -- it is NOT seat billing. Real seat billing (Stripe, USD 25/seat/mo, SIGIL SARL seller, GrantMeter, idempotent fulfilment, A1 auto-topup) is the in-flight G/W-series consumer area.",
+          "wire_or_build": "WIRE to the in-flight billing. The Billing tab renders/links the G-area billing surface and A1 auto-topup (default-OFF). Do NOT rebuild a parallel billing/credits path -- flag the overlap and let G own the store."
+        },
+        {
+          "requirement": "UI wiring integrity: no dead button, no orphan route, stable screen contract (the guards a builder must pass)",
+          "exists_where": "integration/tests/test_ui_wiring_matrix.py (regenerates docs/capability-matrix/ui-wiring-matrix.json; asserts every UI SOV/OFF path + every /api/action verb resolves to a registered route, and every route is UI-driven or INTENTIONALLY_HEADLESS). console W17-14 orphan guard engine/.../console/tests/test_orphan_route_guard_w17_14.py. tools/system-map/generate.py enforces NAV id == route() id == knowledge/system-map/screens.yaml id.",
+          "wire_or_build": "WIRE/comply. Keep the 7 tabs INSIDE the one 'settings' screen (no new screen ids) so the 3-list contract is untouched; regen the ui-wiring matrix for any new verb/read-route; add any headless read route to INTENTIONALLY_HEADLESS."
+        }
+      ],
+      "existing_ui": [
+        "Flat 'settings' screen already exists: NAV {id:'settings', owner:true, perm:'config_nonsecret'} (app.js:138), route branch if(id==='settings') renderSettings (app.js:11730), system-map id 'settings' (screens.yaml:219). renderSettings (app.js:4569) is a card layout: Reasoning model, API keys (links to #/apikeys), Reasoning effort, Bring-your-own provider, and a generic 'System configuration' env-var editor driven by CONFIG_META/config_groups.",
+        "The in-screen TAB pattern the 7-tab layout should use already exists: findings screen P3_TABS findings/graph/evidence/coverage/timeline (app.js:3847-3910) and brain screen decide/memory/benchmark/catalog (app.js:7140-7160) hold tab state in S.tab, read ?tab= via hashQuery() (app.js:2038), and persist it with history.replaceState('#/<screen>?tab='+id). current() strips '?...' (app.js) so the screen id stays stable -- a 7-tab settings layout is in-screen tabs, NOT sub-routes.",
+        "Sibling owner/manage screens that the settings tabs can surface or link rather than duplicate: apikeys (secrets), users (Users & Roles, renderUsers app.js:4939), charter, safety (Approvals), durability, ceremonies, budgets (Token Budgets), compliance (FACT->OWASP/CWE/PCI/SOC2/ISO+ATT&CK, renderCompliance app.js:11111), governance (read-only gate audit), trust (signed certs, renderTrust app.js:1359), posture.",
+        "RBAC-aware nav/tab visibility: renderNav visible() hides owner screens unless V.can(it.perm) (app.js:782); V.can(perm) checks _principal.permissions from /api/whoami (ui.js:82, server returns sorted PERMISSIONS for the role at apps/sigil/sigil/ui/server.py:625). The server re-checks every action verb regardless (enforcement of record).",
+        "CSP-strict no-build conventions: build DOM only with V.h, handlers as onClick/onKeydown props, fetch only via V.getJSON/V.postJSON (sets X-Requested-With + token); after editing packages/vigil-ui/* run packages/vigil-ui/sync.sh to vendor byte-identically into both plane static dirs."
+      ],
+      "true_gaps": [
+        "The 7-tab settings SHELL itself: a tab controller inside renderSettings (General, Billing, Users/Roles, Legal/Compliance, Security/SSO, Governance/Authorization, Notifications/Integrations or similar). New UI code, but it must reuse the existing S.tab + ?tab= + hashQuery() pattern -- no new NAV/route/screens.yaml ids, so the 3-list contract and ui-wiring matrix stay intact except for added verbs/read-routes.",
+        "Spec 1A General org / legal-entity PROFILE store: legal entity name (SIGIL SARL), registered office + billing address(es), contractual contact, emergency/security contact. NO store exists today (grep for legal_entity/registered_office/org_profile/billing_address finds only cloud-sensor false positives and the MERIDIAN practice range). sigil.env is flat KEY=value and ill-suited to structured multi-field records -> build a small new store (e.g. ~/.sigil/org-profile.json) + ONE new signed action verb (e.g. set_org_profile) reusing _persist/_record_signed_event. Alternatively model each scalar as a CONFIG_META var (reuses the whole pipeline but is awkward for nested/address data).",
+        "Versioned policy-ACCEPTANCE / immutable policy ARCHIVE for Legal/Compliance tab (Terms, DPA, Privacy, Subprocessors, AUP, Retention, AI policy): the repo ships dev-license policy .md at root (TERMS.md, PRIVACY.md, ACCEPTABLE-USE.md, LICENSING.md, NOTICE) but there is NO per-tenant/per-version CAPTURE + immutable archive + acceptance-record store. Build the capture + versioned archive (spine-recorded version hash) + enforcement + page scaffolding; the authoritative policy TEXT is owner/counsel input (see owner_input_needed).",
+        "New action verbs for any settings write are NOT yet present: the sovereign ACTIONS set is a closed frozenset (actions.py:41) and the ui-wiring matrix action-funnel is a closed allowlist -- set_org_profile / accept_policy / set_billing_* must be added to ACTIONS + PERMISSION_BY_ACTION + do_action + regenerated into ui-wiring-matrix.json, or they are refused (unknown verb) / fail the wiring guard.",
+        "A default-OFF VIGIL_* feature flag for the new settings surface does not exist yet. Follow the oidc_enabled() model (apps/sigil/sigil/ui/server.py:421: routes REGISTERED ONLY when the flag is on, else fall-through 404, byte-identical build) so the new tabs/routes/verbs are inert and byte-identical when the flag is off."
+      ],
+      "overlaps_inflight": [
+        "G (billing): the Billing tab must WIRE to the in-flight G billing + W-series + A1 auto-topup (Stripe, USD 25/seat/mo, SIGIL SARL seller, GrantMeter, idempotent fulfilment, credits ledger Reserved/Consumed/Released/Refunded/Promotional). No billing/wallet/credits UI is in app.js yet (grep empty), so coordinate so the Settings shell hosts or links G's surface rather than forking it. Flag the ownership boundary explicitly.",
+        "J/J2 (assistant/wallet): the credits wallet (J2) overlaps the Billing tab's balance/ledger view; surface J2's wallet read model, do not duplicate the ledger.",
+        "H (SSO/SCIM): the Security/SSO tab overlaps H. The OIDC scaffolding already exists behind SIGIL_OIDC_ENABLED (apps/sigil/sigil/ui/oidc.py, server.py:421-427, /api/oidc/login|callback token-optional, registered only when on); SCIM user provisioning overlaps the accounts store + Users/Roles tab. Wire the SSO tab to H + the existing oidc_enabled() gate.",
+        "C (connect/ownership-proof): the General/Org tab's ownership-proof and any domain-verification fields overlap C; reuse C's proof flow rather than a new verifier.",
+        "strix enterprise identity/tenant: tenant isolation (org==tenant_id per memory) touches every settings store's key -- any new store (org-profile, policy-acceptance, billing) must be tenant-scoped the same way accounts/spine are, and must preserve tenant isolation + RBAC default-deny.",
+        "A (presentation, merged) and I (proof badge): the Trust/Compliance tab may surface I's proof badge and A's presentation shell -- read-only reuse, no rebuild."
+      ],
+      "owner_input_needed": [
+        "Authoritative legal TEXT of every policy (Terms of Service, DPA, Privacy Policy, Subprocessors list, Acceptable-Use Policy, data-retention policy, AI/model-use policy) -- owner/counsel input; the build ships CAPTURE + immutable versioned ARCHIVE + ENFORCEMENT + page scaffolding only, policy bodies marked owner_input.",
+        "Spec 1A General values: the real legal entity name as it appears on contracts/invoices (ground fact: SIGIL SARL), registered office address, billing address(es), VAT/tax id / company registration number, the named contractual contact, and the emergency/security contact (name, email, phone).",
+        "Billing parameters that are policy not code: confirmation that seat price is USD 25/seat/month + taxes, Stripe as the live provider (Flutterwave paused), SIGIL SARL as the seller/contracting entity shown on checkout + invoices, and the auto-recharge default (must ship OFF-by-default).",
+        "Which of the 7 tabs (and which fields within them) require owner-tier (manage_users/secrets) vs operator-tier (config_nonsecret) RBAC -- a policy decision that sets each new verb's PERMISSION_BY_ACTION mapping (default to owner-only for legal/billing/entity edits unless told otherwise)."
+      ],
+      "stores_to_extend": [
+        "~/.sigil/sigil.env via _persist_env() (apps/sigil/sigil/ui/settings.py:654) + CONFIG_META/CONFIG_VARS (settings.py:339/459) -- for scalar non-secret settings; reuse its atomic 0600 write + closed typed allowlist.",
+        "The hash-chained signed spine via _record_signed_event()/store.append(kind='event', actor='SETTINGS') (settings.py:702) -- extend with new signal kinds (e.g. governor.org_profile_set, governor.policy_accepted) so every settings change stays owner-signed and audit-logged. Never put a secret value here (fingerprint-only).",
+        "SecretStore / ~/.sigil/secrets.sealed (platform/secrets.py) + SECRET_META allowlist -- for any new sealed credential field; perm 'secrets', owner-only, value never returned.",
+        "apps/sigil/sigil/governor/accounts.py account store (owner-signed grants) -- for the Users/Roles tab and any SCIM-provisioned users; reuse, do not fork.",
+        "NEW stores, additive + default-OFF behind a VIGIL_* flag, tenant-scoped like accounts/spine: ~/.sigil/org-profile.json (legal entity + addresses + contacts) and a versioned policy-acceptance/archive store (~/.sigil/policies/ or policies.json holding each policy version hash + acceptance records). Must be byte-identical when the flag is off.",
+        "Billing/credits ledger + prices.json/budgets.json: EXTEND only via the in-flight G/J2 area, not a new parallel store -- the Billing tab reads their model."
+      ],
+      "notes": "CORE FINDING: a persisted, signed, audit-logged settings surface ALREADY EXISTS and must be wired to, not rebuilt. The pattern is settings.py set_config -> _validate_config_typed (closed typed allowlist) -> _persist_env (atomic 0600 sigil.env) -> _record_signed_event (Ed25519 hash-chained spine append, returns recorded_seq); writes go through the single owner-signed funnel UI settingsAct -> POST SOV('/api/action') -> do_action, which runs RBAC (PERMISSION_BY_ACTION over vigil_core.rbac role_can, default-deny) BEFORE the server owner key signs. The browser/AI only ever send a REQUEST.\n\nWHERE THE 7 TABS SLOT IN: as in-screen tabs INSIDE the existing single 'settings' screen (renderSettings, app.js:4569), using the established S.tab + ?tab= + hashQuery() pattern that findings (P3_TABS, app.js:3847) and brain (app.js:7140) already use. current() strips the query string, so the screen id stays 'settings' and the NAV==route()==screens.yaml 3-list contract (tools/system-map/generate.py) is UNCHANGED -- no new top-level ids for the tabs. Per-tab visibility = V.can(perm); the server still re-checks every action verb. Tabs that need a higher tier (billing/legal/entity -> owner) just map their verbs to manage_users/secrets.\n\nCONVENTIONS A BUILDER MUST FOLLOW (exact): (1) Route registration -- UI uses if(id==='...') in route(); the sovereign backend uses path== in _do_GET/_do_POST (apps/sigil/sigil/ui/server.py). For the tabs themselves register NO new routes/ids (use ?tab=). (2) Any new write verb -> add to the closed ACTIONS frozenset (actions.py:41) + PERMISSION_BY_ACTION (accounts.py:96) + implement in do_action. (3) ui-wiring matrix regen MANDATORY: VIGIL_UIWIRING_REGEN=1 python -m pytest integration/tests/test_ui_wiring_matrix.py -- every new UI SOV/OFF path + every /api/action verb must resolve to a registered route (else DEAD BUTTON), every new read route must be UI-consumed or added to INTENTIONALLY_HEADLESS (else ORPHAN); console-side read routes also face the W17-14 orphan guard. (4) Default-OFF VIGIL_* flag gating ROUTE REGISTRATION (oidc_enabled() model, server.py:421): off => route unknown => 404, byte-identical build, tab hidden. (5) RBAC map: NAV owner:true + perm:, per-tab V.can, server default-deny. (6) CSP/no-build: V.h only, handlers as props, V.getJSON/postJSON only, then run packages/vigil-ui/sync.sh (byte-identical vendoring into both planes).\n\nPRESERVE, NEVER WEAKEN: the conjunctive gate chain, FACT-minting authority (AI advisory/demote-only -- settings never gives the AI a write hop), signing/spine integrity (fingerprint-only for secrets), tenant isolation (new stores keyed by tenant_id like accounts/spine), RBAC default-deny. Everything new is additive + default-OFF.\n\nGENUINELY NEW WORK is small and bounded: the tab shell UI, an org-profile.json store + one signed verb for spec 1A General, and a versioned policy-archive/acceptance store -- all other acceptance rules (gate chain, kill-switch, egress, idempotent billing, cancel/auto-topup, AI-cannot-approve) already have real enforcement to wire to, and billing/SSO/wallet belong to in-flight G/H/J2 and must not be rebuilt here."
+    }
+  ],
+  "plan": {
+    "rationale": "The Legal/Compliance/Billing/Authorization/Governance program is ~80% an ENFORCEMENT-COMPLETE wire job plus a bounded set of additive, flag-gated extensions. The gate chain (vigil_core/gate.py conjunctive_decide, gateway scope_match/denylist, egress_guard), the signed authority system (ui/target_authorization.py, vigil_core/authority.py, launch_gate._has_verified_authority), the kill-switch (governor/killswitch.py), the demote-only AI firewall (veracity/firewall.py) + SIGIL owner-Ed25519 governor (promotion.py/budget.py/capability.py, offense_approvals.py A3, ceremonies.py m-of-n), and the idempotent billing core (billing_spool sha256+event_id dedup, BillingSigner catalog-anchored mint, GrantMeter, wallet/metering/invoices/billing_reversal, auto_topup OFF-default, prG plan_change cancel_at_period_end) ALREADY enforce the 8 backend rules. Nothing here rebuilds them; every slice EXTENDS a named store additively, default-OFF behind a VIGIL_* flag, byte-identical when off, and preserves AI-advisory/demote-only + owner-signed mint + tenant isolation + RBAC default-deny. Ordering: the five non-overlapping domains that touch no in-flight billing/identity merge come first (settings shell -> privacy/cookie center -> data-rights -> legal archive -> AI/HITL disclosure), each depending only on the settings shell S1 and mirroring the proven onboarding_store / InvoiceRegistry patterns. The seven billing/authorization/seat slices are scheduled after the consumer wave because they collide with prG-billing, prJ2-wallet, prH-sso, W-series, A1 and stripe-default; they share a single additive invoice_row schema bump (S6->S7) and route all new money exclusively through BillingSigner + the spool. The honest boundary holds throughout: the build ships policy CAPTURE + immutable versioned ARCHIVE + ENFORCEMENT + page scaffolding; the authoritative legal TEXT, SIGIL SARL registration, tax config, real catalog prices, and the promo/seat decisions are owner/counsel input, never fabricated.",
+    "slices": [
+      {
+        "id": "S1",
+        "title": "Customer settings shell + general preferences hub",
+        "extends": "ui/customer_app/app.js (nav) + new ui/preferences_store.py mirroring ui/onboarding_store.py; routes in ui/server.py + ui/custui.py",
+        "new_vs_wire": "new (settings shell + preferences_store) + wire (reuses onboarding_store pattern; links existing #/security, #/team, billing screens into one hub)",
+        "flag": "VIGIL_CUSTOMER_SETTINGS",
+        "schedule": "build-now",
+        "depends_on": "none",
+        "overlaps_inflight": "A (presentation, merged) \u2014 adjacent shell only; no store collision",
+        "owner_input_needed": "none",
+        "backend_rules_covered": [
+          "none directly \u2014 authority/money-free shell; preserves R6 (store carries assert_no_offense, never a signed-authority/money record)"
+        ],
+        "spec_sections": [
+          "settings-shell-general"
+        ],
+        "acceptance_tests": [
+          "Flag OFF: /api/customer/preferences route is unregistered (404); customer_app/index.html placeholders unexpanded; app.js nav renders only pre-existing screens (byte-identical)",
+          "Flag ON: #/settings hub renders and links existing #/security, #/team and billing screens; adds no new authority/money control",
+          "preferences_store: a missing file reads as documented defaults (safe direction), never a 500",
+          "Write is atomic (spine.atomicio), temp file 0600, directory 0700, filename = domain-separated sha256(username) with no username/email in the path",
+          "Account identity = hop-bound session principal; a username/org request field is ignored (cross-account write refused)",
+          "Malformed or oversized (> _MAX_BYTES) file reads as default, not an error",
+          "Store rejects any key outside a closed preference allowlist (no arbitrary field; never a secret/authority/money key)",
+          "Preferences are NEVER written to the signed append-only spine (UI preference only; assert_no_offense present)",
+          "GET -> POST -> GET round-trips the stored preference for the same account",
+          "Backup excludes customer/ store (a restore shows defaults); toggling the flag OFF again is byte-identical with no residual route or migration"
+        ]
+      },
+      {
+        "id": "S2",
+        "title": "Privacy center + cookie consent (authenticated app)",
+        "extends": "new ui/consent_store.py mirroring ui/onboarding_store.py + ui/customer_app/app.js; renders the same policy version id as ui/public_site/privacy and ui/public_site/cookies",
+        "new_vs_wire": "new (in-app consent capture) + wire (existing public_site privacy/cookies pages + settings shell)",
+        "flag": "VIGIL_CUSTOMER_PRIVACY_CENTER",
+        "schedule": "build-now",
+        "depends_on": "S1",
+        "overlaps_inflight": "none material (public_site privacy/cookies already shipped on the keyless marketing plane; different origin)",
+        "owner_input_needed": "cookie inventory classification (strictly-necessary vs optional) + privacy policy text (owner/counsel)",
+        "backend_rules_covered": [
+          "none directly \u2014 consent is a per-account record surface; preserves R6 (not authority/money) and tenant isolation"
+        ],
+        "spec_sections": [
+          "privacy-cookies-data-rights"
+        ],
+        "acceptance_tests": [
+          "Flag OFF: privacy-center route unregistered; no cookie banner injected; app render byte-identical",
+          "Flag ON: in-app Privacy screen renders the SAME policy version id/content-hash as public_site/privacy (single source, no divergent text)",
+          "Cookie banner records only the account's non-essential-cookie choice server-side; the strictly-necessary session cookie is never gated by it",
+          "If the app sets only strictly-necessary cookies, the banner is informational + records acknowledgment and creates no tracking cookie",
+          "consent_store mirrors onboarding_store invariants: sha256-keyed JSON, atomic 0600/0700, missing=prompt-again (safe), malformed=default",
+          "Consent choice = session principal; a request-field account is ignored",
+          "Withdrawing consent updates the stored choice and stops any optional cookie on next render",
+          "No consent record enters the signed spine as authority/money",
+          "Tenant isolation: one account cannot read another's consent (key = session username hash)",
+          "Flag OFF again \u2192 byte-identical (no banner, no route)"
+        ]
+      },
+      {
+        "id": "S3",
+        "title": "Data-rights: export my data + delete/close-account request",
+        "extends": "new ui/data_rights_store.py (owner-signed append-only, mirroring governor/invoices.py InvoiceRegistry) + wire ui/email_channel.py (OFF-default) + read governor/invoices.py, governor/metering.py usage, findings stores",
+        "new_vs_wire": "new (signed request ledger + tenant-scoped export assembler) + wire (email_channel, invoices/usage/findings reads, existing rate-limit)",
+        "flag": "VIGIL_CUSTOMER_DATA_RIGHTS",
+        "schedule": "build-now",
+        "depends_on": "S1",
+        "overlaps_inflight": "J2 wallet (usage rows feed the export) \u2014 read-only, non-blocking",
+        "owner_input_needed": "retention period + deletion SLA + the legal position on 'delete' against an append-only immutable spine (only the owner-gated hard-prune / VAULT-PRUNE path removes records); data-subject-request process owner",
+        "backend_rules_covered": [
+          "R6 AI-advisory/demote-only (AI never fulfils; request is owner-signed/owner-acted) \u2014 preserves tenant isolation"
+        ],
+        "spec_sections": [
+          "privacy-cookies-data-rights"
+        ],
+        "acceptance_tests": [
+          "Flag OFF: export/delete routes unregistered; no email sent; byte-identical",
+          "Flag ON, export: assembles ONLY the requesting org's own non-secret data (invoices, usage, findings) \u2014 tenant-scoped, IDOR-safe (another org's rows structurally absent)",
+          "Export excludes all secret material (API keys/fingerprints), mirroring settings redaction",
+          "Delete/close request writes an owner-signed append-only record (data_rights_store), idempotent per request_id; it does NOT auto-wipe the immutable spine",
+          "The flow states honestly that spine deletion is the owner-gated hard-prune (VAULT-PRUNE) path, not an instant erase; the record is what the owner acts on",
+          "email_channel notify is OFF by default (NullEmailSender); with SMTP opt-in the owner is notified, and the request is recorded regardless of send success",
+          "A data-rights request carries no role/money/authority and unlocks nothing by itself",
+          "Request identity = session principal; a request-field account/org is ignored",
+          "Replay of a request_id is a no-op (idempotent), not a duplicate record",
+          "Export is rate-limited (reuses the existing checkout/login rate-limit); flag OFF again \u2192 byte-identical"
+        ]
+      },
+      {
+        "id": "S4",
+        "title": "Legal archive: immutable versioned policy + acceptance capture",
+        "extends": "new ui/legal_archive.py (owner-signed append-only, mirroring governor/invoices.py InvoiceRegistry) + wire repo TERMS.md/PRIVACY.md/ACCEPTABLE-USE.md + signup in ui/custui.py + ui/public_site",
+        "new_vs_wire": "new (acceptance ledger + versioned archive) + wire (repo policy docs, signup flow, public_site pages)",
+        "flag": "VIGIL_CUSTOMER_LEGAL_ARCHIVE",
+        "schedule": "build-now",
+        "depends_on": "S1",
+        "overlaps_inflight": "none material (distinct from prG compliance_view, which maps findings to control frameworks, not a legal-policy archive)",
+        "owner_input_needed": "authoritative policy TEXT \u2014 Terms, DPA, privacy, subprocessors, AUP, retention, AI policy (owner/counsel); the build ships capture+archive+scaffolding only, never fabricated text",
+        "backend_rules_covered": [
+          "R6 (acceptance is an owner-signed record; the UI never mints it unsigned) \u2014 preserves signing/integrity"
+        ],
+        "spec_sections": [
+          "legal-archive-policy-pages"
+        ],
+        "acceptance_tests": [
+          "Flag OFF: acceptance capture + archive routes unregistered; signup unchanged; byte-identical",
+          "Flag ON: each policy version is archived with a content-hash + version id; the archive is append-only and prune-durable (mirror InvoiceRegistry)",
+          "Acceptance capture records WHICH version id an account accepted and WHEN as an owner-signed spine record",
+          "Policy TEXT is rendered from the repo docs / public_site, never fabricated; an empty/placeholder text set renders a scaffold, not invented text",
+          "On a version bump, an account that accepted an older version is prompted to re-accept; any access-gate on re-accept is behind the same flag (OFF = no gate)",
+          "Acceptance record is idempotent per (account, version_id); replay is a no-op",
+          "Tenant isolation: an account sees only its own acceptance history",
+          "The archive content-hash is verifiable offline (re-hash stored text \u2192 same id)",
+          "No acceptance grants authority or money; it is a legal record only",
+          "Flag OFF again \u2192 byte-identical (capture dormant, archive inert)"
+        ]
+      },
+      {
+        "id": "S5",
+        "title": "AI / human-in-the-loop governance disclosure surface",
+        "extends": "ui/offense_approvals.py + ui/launch_governance.py + ui/ceremonies.py + governor/killswitch.py + engine/crucible/framework/v2/veracity/firewall.py + governor/promotion.py/budget.py/capability.py (read/intent surface)",
+        "new_vs_wire": "wire (surfaces existing governance enforcement) + thin new read-only UI",
+        "flag": "VIGIL_CUSTOMER_AI_GOVERNANCE",
+        "schedule": "build-now",
+        "depends_on": "S1",
+        "overlaps_inflight": "strix enterprise-identity governance (adjacent); offense_approvals/ceremonies already merged",
+        "owner_input_needed": "AI-use policy text (which models; what the AI may and may not do) \u2014 owner/counsel",
+        "backend_rules_covered": [
+          "R6 AI-advisory/demote-only (explicit disclosure + HITL approval surface)",
+          "R4 kill-switch (read-only visibility)"
+        ],
+        "spec_sections": [
+          "ai-hitl"
+        ],
+        "acceptance_tests": [
+          "Flag OFF: AI-governance screen route unregistered; byte-identical",
+          "Flag ON: the screen DISCLOSES that model output is advisory/demote-only (veracity/firewall.py) and can never promote a finding or approve an action",
+          "Kill-switch state (governor/killswitch.py) is shown read-only; the UI cannot toggle it",
+          "Pending per-action offense approvals are shown, but the Approve action still requires the owner key signing in-process; a UI-only request mints no token",
+          "A forged/replayed approval dropped via the UI is refused by the broker's independent verify (key-id pin, action-binding, single-use nonce)",
+          "Per-KIND promotion policy + budgets (promotion.py/budget.py/capability.py) are shown read-only",
+          "The surface writes no authority/money record; it only reads governance state (assert_no_offense on any new helper)",
+          "m-of-n ceremony state (ceremonies.py) is shown but the UI cannot assemble a quorum by itself",
+          "Tenant scoping: an account sees only its own org's approval queue",
+          "Flag OFF again \u2192 byte-identical (no disclosure route)"
+        ]
+      },
+      {
+        "id": "S6",
+        "title": "Itemized tax on checkout + invoice (Stripe Tax)",
+        "extends": "governor/stripe_egress.py make_checkout_creator + governor/invoices.py _INVOICE_CORE (+ SnapshotState.invoice_row / stranded_invoices tripwire) + governor/catalog.py + ui/customer_app/app.js",
+        "new_vs_wire": "new/build (additive) \u2014 tax is a true gap (no automatic_tax, no tax_amount field)",
+        "flag": "VIGIL_BILLING_TAX",
+        "schedule": "after-consumer-wave",
+        "depends_on": "stripe-default merged (coordinates with prG + prJ2)",
+        "overlaps_inflight": "prG-billing, prJ2-wallet, W-series (W2c/W5/W6), stripe-default",
+        "owner_input_needed": "SIGIL SARL tax config \u2014 jurisdictions, enable Stripe Tax/automatic_tax, inclusive vs exclusive pricing, VAT/tax registration; amounts are Stripe-computed, not fabricated",
+        "backend_rules_covered": [
+          "R7 idempotent-billing (tax captured from the verified Stripe invoice via the spool, never a wire field; mint stays BillingSigner-only, catalog-anchored)"
+        ],
+        "spec_sections": [
+          "billing-credits"
+        ],
+        "acceptance_tests": [
+          "Flag OFF: make_checkout_creator emits byte-identical Stripe params (no automatic_tax/customer_update); _INVOICE_CORE serializes byte-identical; SnapshotState.invoice_row unchanged; checkout/invoice UI unchanged",
+          "Flag ON: the checkout session is created with automatic_tax enabled; the tax amount is COMPUTED BY STRIPE, never fabricated by VIGIL",
+          "Tax amount + breakdown are captured from the VERIFIED Stripe invoice/session via the existing webhook\u2192billing_spool path, not an untrusted wire field",
+          "_INVOICE_CORE gains additive signed fields (tax_amount, tax_breakdown) owner-signed with the rest of the invoice record",
+          "SnapshotState.invoice_row bump + stranded_invoices prune tripwire updated; with flag OFF the serialized row is byte-identical (no silent migration)",
+          "Mint path unchanged: credits/entitlements still minted ONLY by BillingSigner from catalog[price_id]; tax is display/record, never a credit source",
+          "The underpay cross-check (expected_amounts) still fires on the pre-tax catalog amount; tax does not relax it",
+          "Invoice render + checkout confirm show an itemized tax line (amount, rate/jurisdiction) only when present",
+          "A replayed webhook does not double-apply tax (idempotent per event_id/invoice_id)",
+          "Flag OFF again \u2192 byte-identical invoices and checkout (tax fields inert/absent)"
+        ]
+      },
+      {
+        "id": "S7",
+        "title": "SIGIL SARL seller / merchant-of-record identity block",
+        "extends": "governor/invoices.py _INVOICE_CORE (additive signed seller-ref) + governor/catalog.py (or new owner-reviewed governor/seller_identity.py constant) + ui/customer_app/app.js",
+        "new_vs_wire": "new/build (additive) \u2014 true gap (zero seller/SARL/merchant-of-record occurrences in apps/sigil)",
+        "flag": "VIGIL_BILLING_SELLER_IDENTITY",
+        "schedule": "after-consumer-wave",
+        "depends_on": "S6 (shares the single additive invoice_row schema bump)",
+        "overlaps_inflight": "prG-billing, prJ2-wallet",
+        "owner_input_needed": "SIGIL SARL registered legal name, address, VAT/tax registration numbers, jurisdiction(s), and merchant-of-record status",
+        "backend_rules_covered": [
+          "R7 (invoice integrity preserved; seller block is owner-reviewed code like catalog.py, not a wire field)"
+        ],
+        "spec_sections": [
+          "billing-credits",
+          "legal-archive-policy-pages"
+        ],
+        "acceptance_tests": [
+          "Flag OFF: invoice record + render byte-identical (no seller block); checkout confirm unchanged",
+          "Flag ON: invoice + checkout confirm render the SIGIL SARL seller/MoR block from owner-reviewed CODE (same trust root as catalog.py), never a wire field",
+          "Seller fields come from owner-reviewed source; a missing config renders nothing (flag-gated), never a placeholder/fabricated identity",
+          "_INVOICE_CORE gains an additive signed seller-ref, owner-signed with the record; the invoice_row bump is coordinated with S6 as a single additive change",
+          "With flag OFF the serialized invoice row is byte-identical",
+          "The seller block is identical across checkout confirm and the stored invoice (one source)",
+          "No mint/credit path is touched (R7 untouched)",
+          "Tenant isolation unaffected (seller is global, not per-tenant data)",
+          "Offline re-verify: the stored invoice signature still verifies with the seller-ref present",
+          "Flag OFF again \u2192 byte-identical"
+        ]
+      },
+      {
+        "id": "S8",
+        "title": "Per-seat pricing model (USD 25/seat/month)",
+        "extends": "governor/catalog.py (seat entry shape) + governor/subscription.py (additive seat_count) + governor/stripe_egress.py (line quantity + subscription-update egress) + ui/customer_app/app.js; seat source = prH-sso governor/orgs.py + scim_directory.py",
+        "new_vs_wire": "new/build (true gap \u2014 no seat/quantity anywhere) + wire (prH-sso SCIM/orgs seat source)",
+        "flag": "VIGIL_BILLING_PER_SEAT",
+        "schedule": "after-consumer-wave",
+        "depends_on": "prH-sso merged (seat source) + S6 (checkout-creator changes coordinate)",
+        "overlaps_inflight": "prH-sso (SCIM/orgs), prG-billing, stripe-default",
+        "owner_input_needed": "confirm per-seat vs flat; the USD 25/seat decision; real Stripe price/plan ids; proration policy for mid-cycle seat add/remove",
+        "backend_rules_covered": [
+          "R7 idempotent-billing (seat change \u2192 one catalog-anchored Stripe subscription-update; BillingSigner-only mint)",
+          "R8 (per-seat cancel still routes prG plan_change cancel_at_period_end)"
+        ],
+        "spec_sections": [
+          "billing-credits",
+          "seats-sso-scim"
+        ],
+        "acceptance_tests": [
+          "Flag OFF: catalog/subscription/stripe_egress byte-identical (no seat quantity); checkout line unchanged",
+          "Flag ON: a per-seat catalog entry carries a quantity-bearing price; the checkout line item sets quantity = the org's provisioned seat count",
+          "Seat count is sourced from the org's SCIM/orgs membership (prH-sso), never a client field",
+          "Subscription state-of-record gains an additive seat_count; LWW active/past_due/canceled semantics unchanged",
+          "A seat add/remove triggers a Stripe subscription-update egress (quantity change), catalog-anchored; VIGIL never prices from the wire",
+          "Mint: plan allotment scales by seat count only via BillingSigner from the catalog entry; AI/UI never mints",
+          "Cancel of a per-seat subscription still routes through prG plan_change cancel_at_period_end, never SubscriptionRegistry.cancel()",
+          "Idempotent: a repeated seat-sync for the same count is a no-op (no duplicate update / no double-charge)",
+          "Proration on mid-cycle seat change follows the owner-set policy (explicit, not default-guessed)",
+          "Flag OFF again \u2192 byte-identical flat-plan behavior"
+        ]
+      },
+      {
+        "id": "S9",
+        "title": "Distinct promotional credit pool + promo-code redemption",
+        "extends": "governor/metering.py PlanCreditLedger expiring-tranche mechanism (preferred) or governor/wallet.py (new signed 'promotional' GRANT_KIND with expires_at) + new governor/promo_codes.py signed redemption ledger; mint via governor/billing.py BillingSigner path",
+        "new_vs_wire": "new/build (true gap \u2014 no 'promotional' kind, no redemption) reusing the existing expiring-tranche mechanism",
+        "flag": "VIGIL_BILLING_PROMO",
+        "schedule": "after-consumer-wave",
+        "depends_on": "prJ2-wallet merged",
+        "overlaps_inflight": "prJ2-wallet, W-series (W3 pause/resume credit)",
+        "owner_input_needed": "whether a distinct promotional-credit program (promo codes / bonus credits with independent expiry) is in scope; the promo catalog (codes, credit amounts, expiry, per-account/global caps)",
+        "backend_rules_covered": [
+          "R7 idempotent-billing (redemption idempotent per code+org; no double-credit)",
+          "R6 (promo credits minted only via owner-signed BillingSigner; AI/LLM never mints)"
+        ],
+        "spec_sections": [
+          "billing-credits"
+        ],
+        "acceptance_tests": [
+          "Flag OFF: wallet GRANT_KINDS + metering ledger byte-identical (no promotional kind, no redemption route)",
+          "Flag ON: a promo pool is a DISTINCT balance with its own expires_at, independent of subscription-period tranches",
+          "Impl reuses PlanCreditLedger expiring tranches (or adds a signed 'promotional' kind with expires_at) WITHOUT breaking fold/snapshot/prune invariants",
+          "Promo redemption is idempotent per (code, org_id); a replay does not double-credit",
+          "Promo credits are minted ONLY via the owner-signed BillingSigner path from a promo catalog; the LLM/UI never mints",
+          "Promo balance EXPIRES at its expires_at (non-rollover), proven by a fold at/after expiry showing zero available",
+          "Spend order (promo vs purchased vs plan) is explicit, documented and tested",
+          "A redeemed code cannot be reused beyond its per-account/global cap (owner-set), enforced idempotently",
+          "wallet.balance/positions and the usage statement correctly separate promo from purchased/plan pools",
+          "Flag OFF again \u2192 byte-identical (no promo pool, no redemption)"
+        ]
+      },
+      {
+        "id": "S10",
+        "title": "Report-a-billing-issue intake",
+        "extends": "new governor/billing_issue_ledger.py (owner-signed append-only, mirroring InvoiceRegistry/PlanChangeLedger) + wire ui/email_channel.py (OFF-default) + replace free-text hints in ui/pending_checkout.py and ui/provision.py",
+        "new_vs_wire": "new/build (true gap \u2014 no form/route/ledger) + wire (email_channel, existing rate-limit)",
+        "flag": "VIGIL_BILLING_SUPPORT_INTAKE",
+        "schedule": "after-consumer-wave",
+        "depends_on": "S1 (placement in settings shell) \u2014 soft",
+        "overlaps_inflight": "prG-billing, prJ2-wallet (screens the intake sits beside)",
+        "owner_input_needed": "support routing destination (owner email / queue) + SLA text",
+        "backend_rules_covered": [
+          "R7-adjacent (an intake carrying no money/authority; AI never acts on it) \u2014 tenant-scoped, IDOR-safe; R5 egress floor preserved (no new egress destination)"
+        ],
+        "spec_sections": [
+          "billing-credits"
+        ],
+        "acceptance_tests": [
+          "Flag OFF: intake route unregistered; refusal messages keep their existing contact-support hint strings; byte-identical",
+          "Flag ON: a 'report billing issue' form writes an owner-signed append-only record (billing_issue_ledger), idempotent per issue_id",
+          "The record is org-scoped (tenant-bound); another tenant's issue is structurally never in the fold (IDOR-safe)",
+          "email_channel notify is OFF by default (NullEmailSender); with SMTP opt-in the owner is notified; the record persists regardless of send result",
+          "The intake carries no money/authority and unlocks nothing by itself",
+          "Requester identity = session principal; a request-field account/org is ignored",
+          "Replay of an issue_id is a no-op (idempotent)",
+          "The intake is rate-limited (reuse existing rate-limit) against spam",
+          "Any outbound email stays within the existing egress allowlist (no new egress destination) \u2014 R5 floor preserved",
+          "Flag OFF again \u2192 byte-identical (the free-text hint remains the only surface)"
+        ]
+      },
+      {
+        "id": "S11",
+        "title": "Wire self-serve cancel + Plans to prG plan_change (cancel-at-period-end)",
+        "extends": "ui/customer_app/app.js (Plans screen into settings shell) \u2192 prG-billing governor/plan_change.py via ui/custui.py billing/plan-change; reads governor/subscription.py state",
+        "new_vs_wire": "wire (rebuilds nothing \u2014 surfaces prG's existing plan_change + Plans route)",
+        "flag": "VIGIL_CUSTOMER_PLANS + VIGIL_CUSTOMER_PLAN_CHANGE (existing)",
+        "schedule": "after-consumer-wave",
+        "depends_on": "prG-billing merged",
+        "overlaps_inflight": "prG-billing (this IS the prG surface \u2014 wire, do not rebuild)",
+        "owner_input_needed": "none (prices owner-set via catalog separately)",
+        "backend_rules_covered": [
+          "R8 cancel stops renewals but keeps paid access to period end (cancel_at_period_end); auto-recharge OFF-default already covered by A1 auto_topup.py"
+        ],
+        "spec_sections": [
+          "billing-credits"
+        ],
+        "acceptance_tests": [
+          "Flag OFF: Plans screen + plan-change action unregistered; byte-identical",
+          "Flag ON: the Plans screen is reachable from the settings shell and lists offered plans + current plan/status/period from subscription.py",
+          "Cancel routes ONLY through plan_change.decide\u2192apply (cancel_at_period_end=True); a test asserts it NEVER calls SubscriptionRegistry.cancel() (the owner-manual immediate-revoke latch) \u2014 the load-bearing soundness guard",
+          "After a cancel, access is retained to the paid period end; the renewal is simply not minted (no mid-period charge/refund; proration=none)",
+          "Switch-at-renewal goes through plan_change KIND_CHANGE, gated by the existing manage_billing + fresh step-up + checkout rate-limit + one-change-per-org (not re-implemented)",
+          "EVENT_SUBSCRIPTION_CANCELED/subscription.deleted is handled as a no-op so the plan expires at period_end (billing.py), proven by test",
+          "The plan-change decision is recorded in the signed PlanChangeLedger (owner-signed, idempotent per nonce)",
+          "AI/UI never approves a plan change by itself; the existing gates stand (R6)",
+          "Tenant isolation: an org can change only its own subscription",
+          "Flag OFF again \u2192 byte-identical"
+        ]
+      },
+      {
+        "id": "S12",
+        "title": "Authorizations surface (customer view of owner-signed engagement authorities)",
+        "extends": "ui/target_authorization.py + governor/monitoring_authority.py + ui/launch_gate.py _has_verified_authority + vigil_core/authority.py (read/intent surface; gate chain unchanged)",
+        "new_vs_wire": "wire (surfaces the existing signed authority system) + thin new read-only UI",
+        "flag": "VIGIL_CUSTOMER_AUTHORIZATIONS",
+        "schedule": "after-consumer-wave",
+        "depends_on": "prC-connect merged (host proven-owned) + S1 (placement)",
+        "overlaps_inflight": "prC-connect (ownership proof), target_authorization (already merged), prH (org scope)",
+        "owner_input_needed": "none (authorities are owner-signed in the cockpit; the UI is read/intent only)",
+        "backend_rules_covered": [
+          "R1 scope/exclusions (disclosed)",
+          "R2 expired/revoked-auth blocking (disclosed)",
+          "R3 out-of-scope/new-host refusal (disclosed)"
+        ],
+        "spec_sections": [
+          "authorizations"
+        ],
+        "acceptance_tests": [
+          "Flag OFF: authorizations screen route unregistered; byte-identical",
+          "Flag ON: the screen lists the account's ACTIVE owner-signed EngagementAuthorities (scope hosts, validity window, GET-only/non-destructive flags) read-only",
+          "The screen DISCLOSES scope/exclusions (R1), expiry (R2) and new/out-of-scope-host refusal (R3) \u2014 disclosure of the enforced gate, not a second enforcement path",
+          "A 'request authorization' action drops an owner-review request only; it mints NO authority (the owner signs in the cockpit via target_authorization.py)",
+          "A forged/unverified authority is still refused by the launch gate _has_verified_authority; the UI cannot widen scope",
+          "An expired or revoked authority shows inactive and a run against it is refused by the gate (not by the UI)",
+          "The surface writes no signed authority record; it only reads + drops an unsigned review request (assert_no_offense on new helpers)",
+          "Tenant isolation: an org sees only its own authorities (host proven-owned via prC-connect first)",
+          "The gate chain (conjunctive_decide, scope_match, egress_guard) is unchanged and byte-identical when the flag is off",
+          "Flag OFF again \u2192 byte-identical"
+        ]
+      }
+    ],
+    "rule_coverage": [
+      {
+        "rule": "R1 \u2014 scope/exclusions enforced (in-charter hosts/targets only)",
+        "enforced_where": "packages/core/vigil_core/vigil_core/gate.py conjunctive_decide + engine/crucible/framework/v2/agents/scope_gate.py + gateway/vigil_gateway/scope_match.py/scope_source.py + the signed charter/authority (ui/target_authorization.py, vigil_core/authority.py). S12 DISCLOSES it to the customer; it does not re-enforce.",
+        "gap": "None in enforcement. Residual is purely presentational: today the customer cannot see the enforced scope \u2014 S12 (after-consumer-wave) closes the visibility gap read-only without touching the gate."
+      },
+      {
+        "rule": "R2 \u2014 expired/revoked authorization blocks the action",
+        "enforced_where": "ui/launch_gate.py _has_verified_authority + vigil_core/authority.py bounded validity window + ui/target_authorization.py (time-boxed authority) + governor/promotion.py anti-replay high-water (a revoked grant cannot be replayed). S12 discloses expiry/revocation state.",
+        "gap": "None in enforcement. Memory flags a pre-existing HIGH (LWW governance replay gap \u2014 signed grants carry no nonce/epoch); that is a separate standing item, not introduced or widened by this program. S12 must not imply the UI performs the block."
+      },
+      {
+        "rule": "R3 \u2014 out-of-scope redirect / new-host refusal",
+        "enforced_where": "gateway/vigil_gateway/scope_match.py + integration/vigil_integration/conjunctive_gate.py + integration/vigil_integration/live/egress_guard.py + engine/crucible/framework/v2/agents/egress_guard.py refuse a redirect/new host not in signed scope. S12 discloses it.",
+        "gap": "None in enforcement. S12 only surfaces the refusal reason to the customer; the gate chain stays the sole authority and byte-identical when the flag is off."
+      },
+      {
+        "rule": "R4 \u2014 kill-switch halts offense",
+        "enforced_where": "governor/killswitch.py + governor/offense_gate.py + the SIGIL owner-Ed25519 governor at base._dispatch. S5 (build-now) shows kill-switch state read-only.",
+        "gap": "None. S5 exposes state only; the UI cannot toggle the kill-switch (asserted by test). No slice adds a bypass."
+      },
+      {
+        "rule": "R5 \u2014 egress floor (never-liftable egress denylist)",
+        "enforced_where": "engine/crucible/framework/v2/agents/egress_guard.py + integration/vigil_integration/live/egress_guard.py + gateway/vigil_gateway/denylist.py (never-liftable BACKSTOP; per memory CLOSED #874/#879/#919). No slice relaxes it.",
+        "gap": "None. Constraint carried into S3/S10 (email_channel) and S6/S8 (stripe_egress): new outbound uses only the existing allowlisted channels \u2014 no new egress destination, so the floor is preserved, not moved to vigil_core."
+      },
+      {
+        "rule": "R6 \u2014 AI/model outputs cannot modify permissions or approve money/actions (advisory/demote-only)",
+        "enforced_where": "engine/crucible/framework/v2/veracity/firewall.py (demote-only) + the SIGIL governor (promotion.py per-KIND, budget.py, capability.py) + ui/offense_approvals.py (A3 per-action, owner-signed) + ui/ceremonies.py (m-of-n). Money mints are BillingSigner-only, owner-Ed25519 signed. S5 makes this legible; S3/S4/S9/S10/S12 preserve it (owner-signed or non-authority records; AI never mints).",
+        "gap": "None. Every new store is either a non-authority preference (S1/S2) or an owner-signed append-only record (S3/S4/S9/S10); no slice gives the UI or the model a mint/approve path. S6/S7/S9 mints stay BillingSigner-only (tested)."
+      },
+      {
+        "rule": "R7 \u2014 idempotent billing: no double-charge, no duplicate credits",
+        "enforced_where": "inbound/billing_spool.py (content-addressed sha256 dedup + BillingSigner event_id idempotency; Flutterwave + Stripe envelopes; fail-closed re-verify) + governor/billing.py BillingSigner (catalog-anchored mint, OUTCOME_ALREADY_MINTED, money never from the wire) + GrantMeter + wallet/metering/invoices/billing_reversal (idempotent per entry_id). Extended additively by S6 (tax captured idempotently from the verified Stripe invoice), S8 (seat change = one catalog-anchored subscription-update), S9 (promo redemption idempotent per code+org).",
+        "gap": "None, provided every new money flow routes through BillingSigner + the spool (no parallel credit path) \u2014 made an explicit acceptance test in S6/S8/S9. Tax/seat/promo are display/record + catalog-anchored, never a wire-amount source."
+      },
+      {
+        "rule": "R8 \u2014 cancel-subscription stops renewals (keeps paid access to period end) + auto-recharge OFF by default",
+        "enforced_where": "Cancel = prG-billing governor/plan_change.py KIND_CANCEL \u2192 Stripe cancel_at_period_end (period runs to its end; renewal not minted; proration=none); billing.py treats subscription.deleted as a no-op so the plan expires at period_end; subscription.py is the LWW state-of-record. Auto-recharge = governor/auto_topup.py DEFAULT-OFF behind VIGIL_BILLING_AUTO_TOPUP (threshold + pack + saved method + monthly cap). S11 wires cancel/Plans to the live app.",
+        "gap": "The one live-wire hazard: a cancel button must NEVER call SubscriptionRegistry.cancel() (the owner-manual latch = immediate revocation, wrong semantics). S11 locks this with an explicit acceptance test (cancel routes only through plan_change cancel_at_period_end). Auto-recharge is already complete; no new slice needed."
+      }
+    ],
+    "build_now": [
+      "S1 \u2014 Customer settings shell + general preferences hub (VIGIL_CUSTOMER_SETTINGS; extends app.js nav + new preferences_store.py mirroring onboarding_store.py)",
+      "S2 \u2014 Privacy center + cookie consent (VIGIL_CUSTOMER_PRIVACY_CENTER; new consent_store.py; depends_on S1)",
+      "S3 \u2014 Data-rights export + delete/close-account request (VIGIL_CUSTOMER_DATA_RIGHTS; new signed data_rights_store.py + wire email_channel.py; depends_on S1)",
+      "S4 \u2014 Legal archive: immutable versioned policy + acceptance capture (VIGIL_CUSTOMER_LEGAL_ARCHIVE; new signed legal_archive.py mirroring InvoiceRegistry; depends_on S1)",
+      "S5 \u2014 AI / HITL governance disclosure surface (VIGIL_CUSTOMER_AI_GOVERNANCE; read/intent over offense_approvals/killswitch/firewall/ceremonies; depends_on S1)"
+    ],
+    "after_consumer_wave": [
+      "S6 \u2014 Itemized tax on checkout + invoice via Stripe Tax (VIGIL_BILLING_TAX; extends stripe_egress + invoices._INVOICE_CORE + catalog; overlaps prG/prJ2/W-series/stripe-default)",
+      "S7 \u2014 SIGIL SARL seller / merchant-of-record block (VIGIL_BILLING_SELLER_IDENTITY; extends invoices._INVOICE_CORE + catalog; depends_on S6 for the single invoice_row bump)",
+      "S8 \u2014 Per-seat pricing USD 25/seat/month (VIGIL_BILLING_PER_SEAT; extends catalog + subscription + stripe_egress; seat source prH-sso; depends_on prH-sso + S6)",
+      "S9 \u2014 Distinct promotional credit pool + promo-code redemption (VIGIL_BILLING_PROMO; extends metering PlanCreditLedger / wallet GRANT_KIND + new promo_codes ledger; depends_on prJ2-wallet)",
+      "S10 \u2014 Report-a-billing-issue intake (VIGIL_BILLING_SUPPORT_INTAKE; new signed billing_issue_ledger + wire email_channel; depends_on S1)",
+      "S11 \u2014 Wire self-serve cancel + Plans to prG plan_change (VIGIL_CUSTOMER_PLANS/_PLAN_CHANGE; wire-only; depends_on prG-billing)",
+      "S12 \u2014 Authorizations surface, customer view of owner-signed authorities (VIGIL_CUSTOMER_AUTHORIZATIONS; read/intent over target_authorization + launch_gate; depends_on prC-connect)"
+    ],
+    "owner_inputs": [
+      "SIGIL SARL legal-entity details for the seller/merchant-of-record block (S7): registered name, address, VAT/tax registration numbers, jurisdiction(s), and whether SIGIL SARL is merchant-of-record",
+      "Tax config (S6): which jurisdictions/taxes apply, whether to enable Stripe Tax/automatic_tax, inclusive vs exclusive pricing \u2014 the tax amounts are then computed by Stripe, never fabricated",
+      "Real catalog prices + allotments + real Stripe price/plan ids to replace catalog.py PLACEHOLDER numbers (S6/S8), including the USD 25/seat decision, per-seat vs flat model, and mid-cycle seat proration policy",
+      "Whether a distinct promotional-credit program (promo codes / bonus credits with independent expiry) is in scope (S9), plus its expiry and per-account/global cap policy",
+      "Authoritative legal policy TEXT \u2014 Terms, DPA, privacy, subprocessors, AUP, retention, AI policy (S4) \u2014 owner/counsel; the build ships capture + immutable versioned archive + enforcement + page scaffolding only, never fabricated text",
+      "Cookie inventory classification (S2): which cookies are strictly-necessary vs optional, to drive the consent center honestly",
+      "Data-rights policy (S3): retention period, deletion SLA, and the legal position on 'delete' against an append-only immutable signed spine (only the owner-gated hard-prune / VAULT-PRUNE path removes records); the data-subject-request process owner",
+      "Support/billing-issue routing destination (S10): owner email or queue, plus response-SLA text",
+      "AI-use policy text for the HITL disclosure (S5): which models are used and what the AI may and may not do"
+    ]
+  }
+}

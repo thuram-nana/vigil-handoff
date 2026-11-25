@@ -1,0 +1,911 @@
+{
+  "maps": [
+    {
+      "dimension": "evidence-store",
+      "stores": [
+        {
+          "name": "Evidence certificate layer (EvidenceCertificate / SignedEvidence / PathCertificate)",
+          "path": "/home/kali/vigil/engine/crucible/framework/v2/evidence/models.py + certify.py",
+          "model": "Pydantic signed cert binding finding_ref -> oracle_context_digest (sha256 of canonical oracle_context) + artifacts[] (ArtifactRef: path relative to engagement evidence root, per-file sha256, size) + engagement_slug + monotonic seq. cert_digest = sha256 of canonical bytes = the hash-chain link. SignedEvidence wraps it with m-of-n Ed25519 governance signatures + optional RFC3161 time-anchor sidecar. PathCertificate binds a derived attack path to backing_cert_digests (the finding certs it leans on). ReportClaim binds report sentences (fact vs analyst-commentary). D2 fields bind collector/scope/capture provenance. NO tenant_id field - only engagement_slug.",
+          "persistence": "PCF bundle written to disk by proof/bundle.py: evidence-bundle.json + trust-root.json + TRUST-ROOT-FINGERPRINT.txt + reverifiable.json, 0600, under a run/bundle dir. ChainEntry/SignedChainHead give tamper-evidence + monotonic last_seq anti-rollback. NO cert-by-id index: verify_bundle resolves certs by finding_ref from an in-memory contexts dict the caller assembles.",
+          "tenant_scoped": false
+        },
+        {
+          "name": "Raw artifact / HTTP evidence archive (evidence_dir)",
+          "path": "/home/kali/vigil/engine/crucible/framework/v2/common/paths.py (evidence_dir) -> targets/<slug>/evidence/<action_id>/ ; writer agents/http_executor.py",
+          "model": "Per-action directory of raw request/response/body bytes, each file bound by per-file sha256 into the cert's ArtifactRef manifest (manifest_dir). action_id is NOT an unguessable capability: it is a per-agent counter (A-NNN, exploit_agent.py) or a content hash poc-<sha256(check_id)[:16]> (proof/run.py). Artifact identity = (slug, action_id, relpath, sha256). verify_certificate re-hashes these from evidence_root and fails CLOSED on mismatch or when artifacts are CLAIMED but no evidence_root supplied.",
+          "persistence": "Filesystem under CRUCIBLE_ROOT/targets/<slug>/evidence/, 0600/0700, re-rooted onto ephemeral tmpfs for ZDR sessions. No content-addressed CAS; no global index.",
+          "tenant_scoped": false
+        },
+        {
+          "name": "Event spine / blackboard (single source of truth)",
+          "path": "/home/kali/vigil/engine/crucible/framework/v2/agents/blackboard.py (.blackboard/store.sqlite) + integration/vigil_integration/live/spine_vigilcore.py (signed JSONL file)",
+          "model": "Append-only SQLite event log: BlackboardEventRow(id, engagement_id, kind, agent_name, payload_json, parent_id, supersedes_id) indexed by (engagement_id, kind). The signed-file variant is append-only canonical-JSON-per-line, hash-chained with vigil_core.chain, TWO Ed25519 sigs per line (record sig authenticating the snapshot + entry sig authenticating the chain-link entry_hash so delete/reorder cannot be hidden). Every projection (F4 graph, worldmodel, graph/store.py) derives from this; it is the backbone for actions/results/leads/decisions as events.",
+          "persistence": "SQLite (D2 tenant-sharded via paths.blackboard_dir) + append-only signed JSONL file. Rebuild re-runs Finding validator + _facts_store_is_sound so a status=fact finding with empty evidence_ref is SKIPPED even if validly signed.",
+          "tenant_scoped": true
+        },
+        {
+          "name": "Attack-chain investigation graph (F4) + Neo4j live binder",
+          "path": "/home/kali/vigil/integration/vigil_integration/graph/{model,projector,query}.py + live/graph_neo4j.py",
+          "model": "Typed provenance DAG: AttackChain -> ChainStep -> {ChainFinding|ChainFailure|ChainDecision} bridged to recon nodes (CVE/Host/Port/Technology/Endpoint). ConfirmationStatus split CONFIRMED (signed evidence_ref present) vs LEAD (never queryable as fact). Provenance = spine_hash (node identity) + signature_ref + evidence_ref (SCITT/OpenVEX cert id, present IFF confirmed) + engagement_id. Bi-temporal valid_from/invalid_from keyed on spine SEQUENCE; refutation retires, never deletes; LEAD->CONFIRMED is monotone. This is the closest existing thing to an evidence-linked investigation graph.",
+          "persistence": "In-memory GraphView per group_id (deterministically rebuilt from signed spine records; projector is the ONLY writer) + optional real Neo4j, written only by rebuild_from_spine (clear engagement partition + re-project). Reads are retrieval_only/authoritative=False (frozen).",
+          "tenant_scoped": false
+        },
+        {
+          "name": "World-model belief / asset + attack-path graph",
+          "path": "/home/kali/vigil/engine/crucible/framework/v2/worldmodel/{models,graph,store,pathsearch,attack_paths,spine_projector}.py",
+          "model": "Typed Node (HOST/SERVICE/ENDPOINT/WEBAPP/DATASTORE/CLOUD_RESOURCE/NETWORK_SEGMENT/PRINCIPAL/CREDENTIAL/SESSION/CONTROL/FINDING + intel kinds DOMAIN/CERTIFICATE/ASN/NETBLOCK/ORG/PACKAGE/VULNERABILITY/...) each with a Beta belief; Edge (REACHABLE_FROM/HAS_GRANT/CAN_ASSUME/VALID_ON/EVIDENCES/OWNS/HOLDS/REACHED/AFFECTS/...). classify_provenance() grades each write: cert:/evidence:/finding:/oracle: prefixes = GROUNDED, llm/assume/demoted = UNGROUNDED. Supplies the rich asset substrate + attack-path (destination = crown-jewel 'goal') + finding->asset EVIDENCES edge.",
+          "persistence": "Embedded JSON file-backed store, partitioned, one-way projection of the spine (spine_projector.py); Neo4jGraphStore is a documented scaffold stub. No promote/grant/tier method by design.",
+          "tenant_scoped": false
+        },
+        {
+          "name": "Remediation / retest certificate layer (VF-1a)",
+          "path": "/home/kali/vigil/integration/vigil_integration/remediation/{remediation_cert,reprove,attestation,attestation_log}.py",
+          "model": "RemediationCertificate (vigil-remediation-cert-v2): the NEGATIVE proof-carrying artifact certifying the original exploit oracle went SILENT over the patched build's re-captured bytes. Binds original_finding_cert_digest -> the signed POSITIVE finding EvidenceCertificate, so exploitable->remediated is bound together by ID. Minted only when the oracle genuinely re-fires and does NOT confirm; Ed25519 signed; verified by re-execution (oracle silent + context digest match + sig verify vs pinned governance key). reprove.py re-proves a finding. This is the de-facto retest mechanism.",
+          "persistence": "Signed JSON attestation + attestation_log / ledger. Links to the finding by cert digest; not projected as a graph node/edge.",
+          "tenant_scoped": false
+        }
+      ],
+      "entities_present": [
+        "assets (worldmodel NodeKind HOST/SERVICE/ENDPOINT/WEBAPP/DATASTORE/CLOUD_RESOURCE/PRINCIPAL/CREDENTIAL/... + F4 recon bridge Host/Port/Technology/Endpoint/CVE)",
+        "actions (spine event kinds + F4 ChainStep with STEP_TARGETED/EXPLOITED/IDENTIFIED + tool; action_id ties raw evidence)",
+        "results (F4 PRODUCED/FAILED_WITH edges, spine events; authoritative result = the signed oracle verdict)",
+        "leads (F4 ChainFinding LEAD, Finding status=lead, confidence.Evidence reasoning datum with Provenance.ref)",
+        "verification (EvidenceCertificate reverify_context + verify_certificate oracle re-fire; CONFIRMED derivation; RemediationCertificate re-fire)",
+        "findings (EvidenceCertificate.finding_ref, F4 ChainFinding CONFIRMED, worldmodel FINDING node, agent Finding type, findings/NNN-*.md human files)",
+        "remediation (PARTIAL - RemediationCertificate by-digest link to finding; not a graph entity)",
+        "retests (PARTIAL - RemediationCertificate = oracle-silent retest + reprove.py; not a first-class tracked entity)",
+        "goals (PARTIAL - only as attack-path destination / crown-jewel in worldmodel + PathCertificate.destination; no charter-objective entity)"
+      ],
+      "links_present": [
+        "finding -> raw artifact: EvidenceCertificate.artifacts[] ArtifactRef(path under targets/<slug>/evidence/<action_id>, sha256) - re-hashed fail-closed at verify",
+        "finding -> oracle_context: oracle_context_digest (sha256), re-grounded by reverify_context",
+        "attack-path -> findings: PathCertificate.backing_cert_digests (sorted cert_digests)",
+        "remediation -> finding: RemediationCertificate.original_finding_cert_digest",
+        "finding/node -> spine: Provenance.spine_hash (node identity) + signature_ref",
+        "finding -> evidence cert: evidence_ref (OPAQUE, non-uniform: detection cert_id | spine hash | SCITT/OpenVEX id | sha256 content digest) - NOT dereferenced/verified at graph boundary",
+        "finding -> asset: worldmodel EVIDENCES edge; F4 FINDING_AFFECTS_ENDPOINT/PORT/TECH, FINDING_RELATES_CVE, FOUND_ON",
+        "action -> result: F4 PRODUCED / FAILED_WITH; chain->step HAS_STEP; step->step NEXT_STEP; LED_TO; DECISION_PRECEDED",
+        "vuln -> asset: worldmodel AFFECTS (threat-intel lead, SBOM oracle proves range membership)"
+      ],
+      "safety_gates": [
+        "FACT-minting authority: projector._is_confirmed RE-DERIVES CONFIRMED only from status=fact AND non-empty signed evidence_ref AND signature_ref - never trusts the producer's claim; build_certificate S2 class-bind REFUSES to mint a cert whose confirmed_by oracle does not prove its bug_class (mint == verify_pcf); reverify_context requires provenance in {reproduced, live_redrive} so an LLM-authored context is NEVER a FACT; verify re-fires the oracle over retained bytes",
+        "Planner cannot promote own claims: graph reads are retrieval_only/authoritative=False (frozen PriorChainContext); worldmodel store has NO promote/grant/tier method by design; fireteam/collect forces member findings to LEAD; oracle is sole authority",
+        "nothing-found != CLEAN: honesty invariant - OpenVEX under_investigation vs affected; refutation RETIRES (bi-temporal invalid_from) never deletes; a non-oracle-grounded refute can only retire a LEAD and is resurrectable",
+        "Evidence integrity/signing: m-of-n Ed25519 + trust_root fingerprint PIN (fail-closed before any sig check); cert_digest hash-chain (ChainEntry/SignedChainHead) + monotonic anti-rollback high-water; artifact sha256 re-hash fail-closed; signed spine (record + entry sigs) rejects tamper/reorder; evidence-less fact SKIPPED on rebuild/checkpoint even if validly signed",
+        "Tenant isolation: D2 shard isolates spine + memory per CRUCIBLE_TENANT; assert_tenant_fleet_isolated FAILS CLOSED unless root is dedicated per tenant; verify_bundle enforces single-engagement (reject cross-engagement mix); Neo4j MERGE/MATCH is engagement_id-scoped so a foreign partition cannot alias; _validated() rejects traversal in tenant ids",
+        "No secrets in labels/logs/exports: F3 redactor (redact_evidence / redact_tool_args, one vocabulary) scrubs certificate.summary/evidence, Detection.summary, and every Neo4j node property; private keys held only in process memory, never written to spine/log/export"
+      ],
+      "gaps": [
+        "NO evidence-by-ID resolver/index: there is no get(evidence_id) -> SignedEvidence + verify store API. evidence_ref is an opaque, non-uniform string (detection cert_id | spine hash | SCITT/OpenVEX id | sha256:<daa>). The graph's CONFIRMED derivation checks only that evidence_ref/signature_ref are NON-EMPTY; it NEVER dereferences and re-verifies the actual stored cert. A dangling or mismatched evidence_ref (points at nothing, or at another finding's cert) is undetected at the graph/query boundary. 'Evidence-linked' integrity is ASSUMED from the signed spine, not enforced by a join.",
+        "Evidence raw store is engagement-slug-keyed, not tenant-stamped or content-addressed: action_id is a counter or sha256(check_id) (predictable, not an unguessable capability); artifact identity = (slug, action_id, relpath, sha256) with no global CAS and no tenant_id anywhere in the evidence cert or graph node. In a SHARED CRUCIBLE_ROOT, two tenants running the same slug COMMINGLE evidence/findings/authority (documented in common/tenant.py) - a real cross-tenant commingling - so an evidence ID is cross-tenant-ambiguous unless root-per-tenant is deployed.",
+        "No first-class goal / remediation / retest ENTITY in the investigation graph: remediation+retest exist only as certificates (RemediationCertificate.original_finding_cert_digest) + reprove.py, and 'goal' only as an attack-path destination. The target chain's finding -> remediation -> retest segment is not projected as graph nodes/edges, so coverage/status (Verified Fixed / Bypassed / Risk Accepted) is not queryable.",
+        "No unified graph spanning all 9 entity types: entities are split across the evidence-cert layer, the spine, the F4 chain graph, and the worldmodel, each with a different id scheme (finding_ref vs cert_digest vs spine_hash vs node id). Nothing joins assets->goals->actions->results->leads->verification->findings->remediation->retests in one projection. 'Coverage' today = scan-surface coverage (scanner/coverage.py), NOT entity-coverage over the investigation model.",
+        "engagement_id/group_id graph partition is NOT access-controlled: isolation is a property-scoped MERGE/MATCH; a caller that names another engagement_id reads that partition. There is no store-enforced check that the caller owns the engagement - isolation relies on upstream authorization + root-per-tenant deployment.",
+        "verify_bundle single-engagement check has a KNOWN empty-slug ride-along (documented red-pen LOW, DEFERRED-INFRA): empty slugs are discarded, so an engagement_slug='' cert can ride a named bundle (defense-in-depth only, still requires a governance-signed head)."
+      ],
+      "extend_not_rebuild": "EXTEND, do not stand up a new graph DB. (1) The event spine (blackboard, agents/blackboard.py + live/spine_vigilcore.py) stays the single source of truth: add new SIGNED event KINDS for goal/remediation/retest so the full chain of custody remains spine-derived, replay-safe and tamper-evident. (2) The integration F4 graph (graph/model.py + live/graph_neo4j.py) is THE investigation read-model to extend - it already has the hard parts: CONFIRMED/LEAD split, bi-temporal retire-never-delete, evidence_ref provenance, engagement_id partition. Add NodeLabel {Goal, Remediation, Retest} and EdgeType {TARGETS_GOAL/SATISFIES, REMEDIATES, RETESTS/VERIFIED_FIXED}, mirroring them in the Neo4j binder's enum whitelist + engagement-scoped MERGE. (3) Reuse the worldmodel (worldmodel/models.py) for the asset substrate, the attack-path 'goal' (destination), the EVIDENCES edge, and its classify_provenance cert:/evidence:/finding: convention to TYPE evidence_ref. (4) Close the evidence-link gap WITHOUT weakening spine-trust: normalize evidence_ref to a scheme-prefixed typed ID (cert:<digest> / scitt:<id> / daa:<sha256>); add a per-engagement evidence resolver get(evidence_id)->SignedEvidence keyed off the PCF bundle; add an OPT-IN strict/verify graph mode that dereferences evidence_ref and re-runs the EXISTING verify_certificate/reverify_context before marking a node CONFIRMED (the worldmodel 'demoted:' marker, written when a recorded-confirmed proof fails to re-fire at projection, is the precedent). This preserves FACT authority by reusing the one independent verification path rather than duplicating it. A new DB is unjustified: Neo4j is already wired behind the F4 projection and the worldmodel store is file-backed and sufficient.",
+      "notes": "Direct answers to the task questions.\n\nCAN A FINDING REFERENCE A REAL STORED ARTIFACT BY ID TODAY? Yes - at the certificate layer, and it is re-verifiable. An EvidenceCertificate binds finding_ref -> artifacts[] (ArtifactRef relpath under targets/<slug>/evidence/<action_id>, by per-file sha256), and verify_certificate re-hashes those bytes from evidence_root and fails CLOSED if they are claimed-but-unchecked or altered. RemediationCertificate.original_finding_cert_digest links a remediation back to the exact positive finding cert, and PathCertificate.backing_cert_digests links an attack path to its backing findings. So finding->artifact, path->findings, and remediation->finding by-ID links are real and offline-re-verifiable. HOWEVER, at the investigation-GRAPH layer the link is a soft, opaque evidence_ref string that is never dereferenced or re-verified (no resolver, no referential-integrity join) - CONFIRMED is derived from evidence_ref merely being NON-EMPTY, trusting the signed append-only spine upstream.\n\nIS ANY ID FORGEABLE? A FACT is not forgeable without the m-of-n governance keys: verify checks sigs + trust-root pin + sha256 artifact manifest + oracle re-fire, all fail-closed; the hash-chained signed spine rejects tamper/reorder; an evidence-less 'fact' is skipped on rebuild. The IDs themselves are predictable not secret (action_id = counter or sha256(check_id); cert_digest/cert_id = content sha256), but integrity rests on signatures + content hashes, not ID secrecy. Residual forgeability is a DANGLING/MISMATCHED evidence_ref at the graph boundary (undetected because unresolved) and the documented empty-slug bundle ride-along (LOW).\n\nIS ANY ID CROSS-TENANT? There is NO tenant_id in the evidence cert or graph data model - only engagement_slug / engagement_id. On disk only the spine + memory are tenant-sharded (D2); evidence, findings and authority are slug-scoped, so a shared CRUCIBLE_ROOT with the same slug COMMINGLES evidence across tenants (documented real cross-tenant commingling). Genuine tenant isolation = one CRUCIBLE_ROOT per tenant, fail-closed for fleet workers via assert_tenant_fleet_isolated. Cross-ENGAGEMENT mixing is blocked at verify_bundle (single-engagement) except the empty-slug case; the graph partitions by engagement_id but does not authenticate partition ownership.\n\nKey code anchors: /home/kali/vigil/engine/crucible/framework/v2/evidence/{models.py,certify.py}; .../common/{paths.py,tenant.py}; .../agents/blackboard.py; .../worldmodel/models.py; /home/kali/vigil/integration/vigil_integration/graph/{model.py,projector.py,query.py}; .../live/{graph_neo4j.py,spine_vigilcore.py}; .../remediation/remediation_cert.py; .../detection/{base.py,certificate.py}. CONSTRAINT NOTE: I did not open or reference ARTEX; this design is independent and is a private matrix (not for the public tree)."
+    },
+    {
+      "dimension": "findings-fact-verification",
+      "stores": [
+        {
+          "name": "Blackboard event spine (append-only, hash-chained)",
+          "path": "/home/kali/vigil/engine/crucible/framework/v2/.blackboard/store.sqlite (schema: /home/kali/vigil/engine/crucible/framework/v2/agents/schema.sql ; models: /home/kali/vigil/engine/crucible/framework/v2/agents/models.py ; hash-chain: agents/spine_chain.py)",
+          "model": "SQLite `events` table: id, engagement_id->bb_engagements.slug, kind in {observation,hypothesis,plan,action,result,finding,critique,decision,reward,critic_verdict,reflection,refusal,tool_call,tool_result,agent_message}, agent_name, posted_at, payload_json, parent_id (derivation DAG), supersedes_id (revision). Append-only enforced by SQL triggers (no UPDATE/DELETE) + Python API; revise only by supersession. FindingPayload carries oracle_context, verified_by_oracle, oracle_kind, critique_status in {pending,confirmed,objections,llm_advisory} ('confirmed' RESERVED for a fired oracle). A FACT = a finding event whose payload has verified_by_oracle.",
+          "persistence": "Durable SQLite, WAL; cryptographic tamper-evidence via spine_chain.verify_spine_chain (hash-linked). Per-engagement by slug.",
+          "tenant_scoped": true
+        },
+        {
+          "name": "VIGIL graph read-model (GraphView + projector) -- the existing investigation DAG",
+          "path": "/home/kali/vigil/integration/vigil_integration/graph/model.py , /home/kali/vigil/integration/vigil_integration/graph/projector.py , /home/kali/vigil/integration/vigil_integration/graph/query.py (deploy-gated Neo4j mirror: /home/kali/vigil/integration/vigil_integration/live/graph_neo4j.py , driver: live/graph_driver.py)",
+          "model": "Typed bi-temporal provenance DAG. NodeLabel {AttackChain,ChainStep,ChainFinding,ChainFailure,ChainDecision} + recon bridges {CVE,Host,Port,Technology,Endpoint}. EdgeType {HAS_STEP,NEXT_STEP,PRODUCED,LED_TO,FAILED_WITH,DECISION_PRECEDED,FOUND_ON,FINDING_RELATES_CVE,FINDING_AFFECTS_ENDPOINT/PORT/TECH,...}. ConfirmationStatus {CONFIRMED|LEAD} baked into types; Provenance {spine_hash(node id), signature_ref, evidence_ref(present<=>confirmed), engagement_id}; valid_from/invalid_from (spine seq, never delete). Monotone LEAD->CONFIRMED only.",
+          "persistence": "In-memory pydantic GraphView, NOT persisted standalone -- PROJECTION-ONLY from signed spine records (projector.project is the sole writer; _is_confirmed re-derives CONFIRMED from signed evidence_ref+signature_ref, never from a claim). Durable mirror = Neo4j partition per engagement (rebuild_from_spine clears+rewrites, :ChainFinding:Confirmed vs :Lead labels, parameterized Cypher).",
+          "tenant_scoped": false
+        },
+        {
+          "name": "WorldModel asset/attack graph",
+          "path": "/home/kali/vigil/engine/crucible/framework/v2/worldmodel/graph.py , worldmodel/models.py , worldmodel/store.py , worldmodel/spine_projector.py",
+          "model": "In-memory typed multigraph. 22 NodeKind incl. FINDING + assets (HOST,SERVICE,ENDPOINT,WEBAPP,DATASTORE,CLOUD_RESOURCE,NETWORK_SEGMENT,PRINCIPAL,CREDENTIAL,SESSION,CONTROL) + intel (DOMAIN,CERTIFICATE,ASN,NETBLOCK,ORGANIZATION,IDENTITY,APPLICATION,PACKAGE,VULNERABILITY,INDICATOR). 25+ EdgeKind incl. EVIDENCES. Every node/edge carries provenance + Beta(alpha,beta) belief + grounding tier (grounded/intel/ungrounded via classify_provenance). FINDING node gets oracle: provenance ONLY if proof re-fires now (campaign.populate_worldmodel), else demoted: (ungrounded).",
+          "persistence": "JSON snapshot (store.to_json/from_json, deterministic, edge->node integrity on load). Projected one-way from the signed spine (spine_projector, confirmed<=>signed). Per-engagement.",
+          "tenant_scoped": false
+        },
+        {
+          "name": "Evidence certificate chain (proof-carrying findings)",
+          "path": "/home/kali/vigil/engine/crucible/framework/v2/evidence/models.py , evidence/certify.py , evidence/pcf.py , evidence/chain.py (re-exports vigil_core.chain) ; offline verifier: engine/crucible/framework/v2/verify/reverify.py",
+          "model": "EvidenceCertificate (deterministic, extra=forbid): finding_ref, bug_class, confirmed_by, confidence, oracle_context_digest(sha256), artifacts[ArtifactRef by sha256], seq, provenance(reproduced|live_redrive), witness_quorum_required/kinds, report_claims, D2 artifact-identity/scope/completeness. SignedEvidence = cert + m-of-n Signatures + optional RFC3161 time-anchor sidecar. ChainEntry/SignedChainHead hash-link the log (anti-rollback last_seq).",
+          "persistence": "Signed, canonical-byte-stable, hash-chained; offline-verifiable by re-execution (python3 -m framework.v2 verify). Per-engagement (engagement_slug). Raw artifacts live under the evidence root.",
+          "tenant_scoped": true
+        },
+        {
+          "name": "Sovereign inert-finding spine (authoritative FACT landing)",
+          "path": "/home/kali/vigil/integration/vigil_integration/inert_finding.py (receiver, vigil_core-only) , finding_spool.py (filesystem seam producer) -> sigil.inbound.spool_watcher -> vigil_core owner-signed spine",
+          "model": "Signed JSON envelope vigil.inert-finding.v1: {schema, certificate, signatures} (+kind:detection for S7c). Parsed with json.loads ONLY (no code path); size-bounded (256KB); m-of-n CRUCIBLE-governance signature verified over the exact evidence_signing_bytes (anchor 1) then owner-signs the spine head (anchor 2). A LEAD (unsigned) can never cross.",
+          "persistence": "Atomic temp->rename into 0700 incoming/, content-addressed name (idempotent); drained to the owner-signed hash-chained sovereign spine (two-anchor trust).",
+          "tenant_scoped": true
+        },
+        {
+          "name": "Remediation + retest attestation log (findings->remediation->retests)",
+          "path": "/home/kali/vigil/integration/vigil_integration/remediation/remediation_cert.py , remediation/reprove.py , remediation/attestation_log.py , remediation/prove_driver.py , remediation/triage.py",
+          "model": "remediation_cert (vigil-remediation-cert-v2): NEGATIVE proof-carrying cert -- original exploit oracle goes SILENT over re-captured patched bytes; references original_finding_cert_digest (binds exploitable->remediated). reprove.run_reprove: continuous re-proof, four-state signed prove-cert {REMEDIATED|STILL_VULNERABLE|INCONCLUSIVE|REFUSED} per ProveTarget; attestation_log.append_tick chains governance m-of-n signed heads + witness quorum (witnessed.jsonl).",
+          "persistence": "Signed, append-only, anti-rollback tick series + witnessed checkpoints; offline-verifiable by re-execution (oracle over wire bytes is sole authority). Keyed to the positive finding cert.",
+          "tenant_scoped": true
+        },
+        {
+          "name": "On-disk raw evidence artifacts (sealed at rest)",
+          "path": "evidence_dir / evidence_archive_dir resolved via /home/kali/vigil/engine/crucible/framework/v2/common/paths.py (per-slug) ; sealing: engine/crucible/framework/v2/common/context_sealing.py",
+          "model": "Raw HTTP exchanges / captured bytes referenced by ArtifactRef sha256 in the certificate; credential/raw-response fields SEALED with a per-engagement DEK (crypto-shred on erasure). reverify_finding recovers plaintext in-engagement to re-fire the pure oracle byte-identically; fail-closed if the DEK is shredded/tampered.",
+          "persistence": "Filesystem, gitignored, 0600, per-ENGAGEMENT (slug). NOT tenant-sharded -- isolated only by one-CRUCIBLE_ROOT-per-tenant.",
+          "tenant_scoped": false
+        }
+      ],
+      "entities_present": [
+        "assets: STRONG -- WorldModel asset NodeKinds (HOST/SERVICE/ENDPOINT/WEBAPP/DATASTORE/CLOUD_RESOURCE/PRINCIPAL/...) + GraphView recon bridges (CVE/Host/Port/Technology/Endpoint) + spine ObservationPayload",
+        "goals: PARTIAL -- HypothesisPayload (handle, status open/claimed/tested/confirmed/refuted/deferred) + PlanPayload (targets_hypothesis) on the spine ONLY; no Goal node in GraphView/WorldModel",
+        "actions: STRONG -- spine ActionPayload (plan_id) + GraphView ChainStep (STEP_EXPLOITED/TARGETED/IDENTIFIED)",
+        "results: STRONG -- spine ResultPayload (action_id) + GraphView PRODUCED edge / ChainFailure",
+        "leads: STRONG -- GraphView ChainFinding(LEAD) + AdapterResult.status='lead' + report grade DEMOTED/LEAD + WorldModel VULNERABILITY (threat-intel lead)",
+        "verification: PROCESS-ONLY (no node) -- oracle re-execution (reverify_context / firewall.admit / certify_admitted) + EvidenceCertificate + advisory CritiquePayload/CriticVerdictPayload(target_event_id); exists as a gate+cert+payload-ref, not a first-class graph node",
+        "findings: STRONG -- spine FindingPayload(kind=finding) + GraphView ChainFinding(CONFIRMED) + WorldModel FINDING node + signed EvidenceCertificate",
+        "remediation: CERT-ONLY (no node) -- remediation_cert (original_finding_cert_digest); RemediationDraft is only a Neo4j read, not projected as a node",
+        "retests: CERT-ONLY (no node) -- reprove four-state prove-cert + attestation_log tick series; not projected into the graph"
+      ],
+      "links_present": [
+        "GraphView: HAS_STEP, NEXT_STEP, PRODUCED, LED_TO, FAILED_WITH, DECISION_PRECEDED, FOUND_ON, FINDING_RELATES_CVE, FINDING_AFFECTS_ENDPOINT/PORT/TECH (step->finding->recon)",
+        "WorldModel: EVIDENCES (finding->endpoint/asset) + REACHABLE_FROM/TRUSTS_FOR/HAS_GRANT/VALID_ON/CONTROL_PROTECTS + attacker OWNS/HOLDS/REACHED",
+        "spine: parent_id (derivation DAG: result->action->plan; finding->result) + supersedes_id (revision)",
+        "finding->evidence: EvidenceCertificate.oracle_context_digest + artifacts[sha256] + finding_ref; GraphView Provenance.evidence_ref (present<=>confirmed) + spine_hash",
+        "finding->oracle_context: FindingPayload.oracle_context (serialized FindingContext) re-fired by reverify/admit; cert binds oracle_context_digest",
+        "remediation->finding: remediation_cert.original_finding_cert_digest (cert field only, not a graph edge)",
+        "path->findings: PathCertificate.backing_cert_digests (attack path -> backing finding certs)",
+        "MISSING AS TRAVERSABLE EDGES: target_event_id (critique/critic_verdict/reward->finding) lives in JSON payload, not a spine FK/graph edge; lead->verification->finding; finding->remediation->retest"
+      ],
+      "safety_gates": [
+        "FACT-minting authority is single-sourced: FACT established ONLY by the independent verification path (oracle fires at >=high-confidence over retained oracle_context AND class is oracle-mapped (is_known_bug_class) AND firing oracle validly confirms the class (oracle_confirms_class, S2) AND declared class matches context class (relabel refusal) AND provenance in {reproduced,live_redrive} (G4) AND m-of-n governance signers present). oracle_adapter.confirm_and_certify / certify_admitted.",
+        "admission vs minting split: verdict.admit() is the ONLY constructor of AdmittedVerdict (contextvar-guarded; replace/pickle/copy fail loudly); certify_admitted REQUIRES an AdmittedVerdict (raw string/result = TypeError). A planner/LLM can never promote its own claim: CriticVerdict has NO 'confirm'; agent_message intent is coordination-only, never promotable; critique_status 'confirmed' reserved for a fired oracle.",
+        "veracity firewall is DEMOTE-ONLY: firewall.admit() RE-EXECUTES every cited ground, can turn a fabricated 'confirmed' into UNGROUNDED but NEVER promotes an oracle-refused claim; grounds are BOUND to the claim's bug_class/entity (a SQLi proof cannot ground an RCE claim). _sticky_grounded + demoted: marker keep the firewall's downgrade absolute on graph upsert.",
+        "'nothing found' is NEVER CLEAN without the checks: compose([])->INCONCLUSIVE (empty family not clean); out-of-vocabulary class -> UNSUPPORTED lead, never CLEAN; evidence-branches.json clean_capable/fact_capable flags enforced per branch; CLEAN requires a KNOWN-class applicable oracle with an observable channel that conclusively did not fire.",
+        "offline re-verifiability: python3 -m framework.v2 verify re-runs pure oracles over retained context (reverify_context), re-checks class-bind, provenance (S4), sealed-evidence recovery, witness-quorum; exit 0 iff every cert reproduces. populate_worldmodel re-fires every finding's proof before writing oracle: provenance (universal veracity choke).",
+        "evidence integrity/signing: m-of-n governance signatures over canonical deterministic bytes; hash-chained spine + cert ChainEntry/SignedChainHead (anti-rollback); artifact sha256 recheck; ArtifactRef path confined (no abs/..); credentials sealed at rest (DEK, crypto-shred).",
+        "tenant isolation: spine(.blackboard)+memory(.memory) sharded per CRUCIBLE_TENANT; assert_tenant_fleet_isolated fails closed (requires sharded AND dedicated root; atomic TOFU .tenant-owner claim); ONE CRUCIBLE_ROOT PER TENANT REQUIRED because targets/evidence/authority/kill-switch are per-SLUG not per-tenant. Inert seam verifies m-of-n over exact bytes (rejects fabricated); Neo4j partition per engagement_id, parameterized Cypher.",
+        "authorization gates: WorldModel/GraphView are INERT -- authorize nothing; query layer returns frozen non-authoritative PriorChainContext (authoritative=False, retrieval_only=True); any suggested action still clears WARDEN + conjunctive gate + egress gate; scope_gate on recon bridges (fail-closed on unextractable host); refusals land on the spine.",
+        "no secrets in labels/logs/exports: F3 redactor (tools.redact_tool_args) on graph node props + fireteam escalation rows; secret-free Neo4j writes; evidence sealing; provenance refs are signed public references, not secrets."
+      ],
+      "gaps": [
+        "No first-class VERIFICATION node. Verification is a gate+certificate+advisory-critique, linked to a finding only by target_event_id inside a JSON payload or by cert digest. The target chain wants verification as a node between leads and findings -- a Verification node keyed on EvidenceCertificate.cert_digest/oracle_context_digest, carrying verdict (FACT/LEAD/CLEAN/INCONCLUSIVE), confirmed_by, confidence, provenance, reproduced-at-seq, with lead->verification->finding edges.",
+        "No remediation/retest nodes or edges in the graph layer. remediation_cert + reprove four-state ticks exist as signed certs/logs (keyed on original_finding_cert_digest) but are never projected into GraphView/WorldModel; RemediationDraft is only a Neo4j read. Need Remediation + Retest node labels + REMEDIATES/RETESTS edges projected from the attestation log.",
+        "Goals (hypothesis/plan) are spine-only, not graph nodes. The 'goals->actions' leg is not traversable in any read-model; need a Goal/Hypothesis node keyed on the hypothesis handle with a TESTS edge to ChainStep/action.",
+        "Cross-reference links are payload fields, not edges. critique/critic_verdict/reward reference a finding via target_event_id inside payload_json (not a spine FK), and the GraphView projector only consumes SpineRecord kinds {chain,step,finding,failure,decision,refute,bridge} -- it does not project critique/critic_verdict/reward/hypothesis/plan at all, so verification->finding and reward->finding are invisible in the DAG.",
+        "Coverage / CLEAN state has no graph home. CLEAN and INCONCLUSIVE verdicts (channel-confirmed negatives = the coverage half of a coverage graph) are computed in verdict.py/oracle_adapter but never projected as nodes/edges, so 'which surface was examined and found clean' is not representable. The requested coverage graph needs this.",
+        "Asset<->chain bridge is finding-centric only. _project_bridges wires finding->recon-target; STEP_TARGETED/STEP_EXPLOITED/STEP_IDENTIFIED exist as EdgeTypes but steps/actions are NOT bridged to asset nodes, so 'what was tested on which asset' (coverage) is not anchored to assets except through a finding.",
+        "Two parallel, disjoint finding models. A finding exists both as GraphView ChainFinding (keyed spine_hash) and WorldModel FINDING (keyed finding:{bug_class}:{insertion_point}) with different vocabularies/keys; an investigation+coverage graph spanning assets->...->retests must consolidate onto ONE spine+projector.",
+        "No per-node tenant_id -> cross-tenant evidence-ID rejection is deployment-only. GraphView/Neo4j nodes carry engagement_id/group_id but NO tenant_id; tenant isolation relies on one-root-per-tenant + the spine shard, not on a graph property. A multi-tenant investigation graph that must 'reject cross-tenant evidence IDs' needs an explicit tenant label + query-time filter as defense-in-depth.",
+        "GraphView is not durably persisted standalone. It is rebuilt-on-demand from the spine or mirrored to deploy-gated Neo4j; without Neo4j connected there is no at-rest investigation-graph snapshot, so a durable, queryable, tenant-labeled investigation+coverage store does not exist until the Neo4j seam (or an equivalent snapshot) is wired."
+      ],
+      "extend_not_rebuild": "EXTEND the VIGIL graph read-model at /home/kali/vigil/integration/vigil_integration/graph/ (GraphView + projector + query, plus its deploy-gated Neo4j mirror live/graph_neo4j.py), driven from the existing blackboard event spine (/home/kali/vigil/engine/crucible/framework/v2/.blackboard/store.sqlite). This store already IS a projection-only, bi-temporal, CONFIRMED/LEAD-typed investigation DAG whose nodes are keyed on signed spine hashes and whose _is_confirmed re-derives FACT from signed evidence -- the exact anti-trust-laundering spine the task mandates. Concretely: (1) add SpineRecord kinds + NodeLabels for Goal(hypothesis handle), Verification(cert_digest), Remediation(original_finding_cert_digest), Retest(prove-cert tick), and Coverage/Clean; (2) extend graph.projector._project_record to project hypothesis/plan->Goal, critique/critic_verdict->Verification (deriving the edge from the payload target_event_id already on the spine), and the remediation/reprove attestation log -> Remediation/Retest; (3) add the edges goal->action, lead->verification->finding->remediation->retest and step->asset coverage edges; (4) carry tenant_id as an explicit node/edge property + query-time filter (defense-in-depth over one-root-per-tenant), keeping _is_confirmed as the SOLE FACT gate and the query layer non-authoritative. Do NOT stand up a new graph database: Neo4j is already the deploy-gated backing store, the in-memory GraphView + spine projection cover the rest, and a new DB would create a parallel source of truth -- precisely what the projector forbids. WorldModel (worldmodel/) stays the complementary asset/attack-path layer; consolidate finding identity onto the spine-hash key rather than duplicating findings across both.",
+      "notes": "FACT vs LEAD vs CLEAN is a CLOSED, type-enforced set (verdict.Verdict = {FACT,LEAD,CLEAN,INCONCLUSIVE}; oracle_adapter.Outcome adds POSITIVE/UNSUPPORTED/ERROR/SKIPPED). FACT is minted ONLY by confirm_and_certify/certify_admitted after the full conjunct (oracle fires >=high-confidence over retained oracle_context + known oracle-mapped class + oracle validly confirms that class + declared==context class + provenance in {reproduced,live_redrive} + m-of-n governance signature), producing a signed EvidenceCertificate/SignedEvidence binding oracle_context_digest + artifact sha256. Everything confirmed-but-unmapped / LLM-provenanced / relabelled / unsigned is a LEAD (retained, honestly labelled). CLEAN requires a KNOWN-class applicable oracle with an observable channel that conclusively did not fire; an out-of-vocabulary class or an empty/unexamined family is UNSUPPORTED/INCONCLUSIVE, never CLEAN (compose([])->INCONCLUSIVE). Three independent re-execution gates keep this honest: verdict.admit (registry-driven, sole AdmittedVerdict constructor), veracity.firewall.admit (DEMOTE-ONLY re-execution of cited grounds, bound to the claim's subject), and verify.reverify (offline, python3 -m framework.v2 verify) -- re-used by report.grounding.admit_for_report/grade_finding and by scanner.campaign.populate_worldmodel (the universal choke that re-fires a proof before writing oracle: provenance, else demoted:). FACTs cross to the sovereign spine as INERT signed envelopes (inert_finding/finding_spool), m-of-n verified over exact bytes. A finding links to its evidence via EvidenceCertificate (oracle_context_digest, artifacts[sha256], confirmed_by, provenance, how_to_verify) and, in the graph read-model, via GraphView Provenance {spine_hash, signature_ref, evidence_ref(present<=>confirmed), engagement_id}; its oracle_context is the serialized FindingContext re-fired at verification time. Where verification/findings nodes should attach: the task's lead->verification->findings->remediation->retests spine is already 70% present as EVENTS on the blackboard (observation/hypothesis/plan/action/result/finding/critique) with parent_id/supersedes_id links and as the GraphView AttackChain->ChainStep->ChainFinding DAG, but Verification, Remediation and Retest are not yet first-class nodes and Goal/coverage/clean are not projected -- so the right move is to extend the existing spine->GraphView projector (not add a DB). WARNING (tenant isolation, load-bearing, from common/tenant.py): the D2 shard isolates ONLY .blackboard + .memory; targets/<slug>, evidence, authority and kill-switch are per-SLUG not per-tenant, so two tenants sharing one CRUCIBLE_ROOT + slug COMMINGLE findings/evidence/authorization -- ONE CRUCIBLE_ROOT PER TENANT is a hard deployment REQUIREMENT, and a multi-tenant investigation graph should additionally carry an explicit tenant_id node property + reject cross-tenant evidence IDs rather than relying on the filesystem layout alone. Read-only audit; nothing modified; ARTEX not touched."
+    },
+    {
+      "dimension": "recon-assets-leads",
+      "stores": [
+        {
+          "name": "World-model asset graph (in-memory)",
+          "path": "/home/kali/vigil/engine/crucible/framework/v2/worldmodel/graph.py + worldmodel/models.py",
+          "model": "Directed typed multigraph. Node(id='{kind}:{key}', kind:NodeKind, attrs, provenance, confidence, alpha/beta Beta-belief, first_seen/last_seen monotonic seq, grounding tier). NodeKind spans recon/asset substrate: DOMAIN, HOST, SERVICE, ENDPOINT, CERTIFICATE, ASN, NETBLOCK, ORGANIZATION, IDENTITY, APPLICATION, WEBAPP, DATASTORE, CLOUD_RESOURCE, PACKAGE, VULNERABILITY, INDICATOR, PRINCIPAL, CREDENTIAL, SESSION, CONTROL, FINDING. Edge(src,dst,kind:EdgeKind) incl RESOLVES_TO, PRESENTS_CERT, ANNOUNCES, HOSTS, RUNS, OBSERVED_ON, ASSET_OWNS, SAME_AS, CO_HOSTED_WITH, DEPENDS_ON, AFFECTS, EVIDENCES. Every write carries provenance -> classify_provenance() grounding tier (grounded/intel/ungrounded).",
+          "persistence": "PRIMARILY IN-MEMORY per run. JSON persistence exists (worldmodel/store.py: canonical sorted nodes+edges, owner-only secure_write) but is invoked only opt-in (targets/<slug>/plan-input.json under --spine, tests). On the default engage path the graph is NOT durably saved; it is rebuilt from intel_observations via project_observation. This is the store where promote.py ENDPOINT leads and derived asset edges live transiently.",
+          "tenant_scoped": false
+        },
+        {
+          "name": "Intel durable store (asset/lead ground truth)",
+          "path": "/home/kali/vigil/engine/crucible/framework/v2/intel/store.py + memory/intel_schema.sql",
+          "model": "SQLite v2. intel_observations(obs_id PK, engagement_slug, source, source_kind, collector, subject_node_id, relation, object_node_id, claim_key, polarity, confidence, reliability, seq, obs_json) = append-only atomic facts, full Observation JSON round-trips. intel_entities(canonical_id,engagement_slug PK, tier, primary_kind, confidence, member_count, owned_by, entity_json) = resolved assets (many refs -> one asset). intel_entity_members (flattened reverse lookup). intel_merge_log (per-union audit citing the signal). intel_source_yield (cross-engagement source-yield learning feeding ReconPlanner priors). Observation carries Admiralty A-F x 1-6 reliability + polarity (affirms/refutes) + LEAD source_kinds (web_scanner/misp/stix/mcp_tool/cloud_posture/request_telemetry/llm_interaction/auth_telemetry).",
+          "persistence": "Durable SQLite via memory.Store; single-writer IntelIngest (persist log -> project world-model -> resolve entities -> persist entities). Idempotent (obs_id/canonical_id upserts); replayable. The world-model is a derived projection of these rows.",
+          "tenant_scoped": true
+        },
+        {
+          "name": "Blackboard event spine (append-only narrative)",
+          "path": "/home/kali/vigil/engine/crucible/framework/v2/agents/blackboard.py + agents/schema.sql + agents/spine_chain.py",
+          "model": "SQLite at .blackboard/store.sqlite. bb_engagements(id,slug UNIQUE,started_at,closed_at) + events(id, engagement_id FK, kind, agent_name, posted_at, payload_json, parent_id, supersedes_id). 15 kinds = the narrative spine: observation(lead), hypothesis, plan(goal), action, result, finding, critique, decision, reward, critic_verdict, reflection, refusal, tool_call, tool_result, agent_message. Supersession (new row -> supersedes_id) is the only revision. Per-kind Pydantic payloads (agents/models.py) carry free-text handles: plan_id, targets_hypothesis, action_id, derived_from_hypothesis, oracle_kind/verified_by_oracle.",
+          "persistence": "Durable append-only SQLite. UPDATE/DELETE refused by SQL triggers; hash-linked governance-signed chain (spine_chain over evidence/chain.py, m-of-n head, engagement_id bound into digest, verify fails closed). Seal-at-capture encrypts credential-bearing excerpts (observation.raw_excerpt, result.body_excerpt) before they land, DEK off-spine for crypto-shred.",
+          "tenant_scoped": true
+        },
+        {
+          "name": "Memory / MLS store (confirmed findings + cross-engagement learning)",
+          "path": "/home/kali/vigil/engine/crucible/framework/v2/memory/store.py + memory/schema.sql (writer memory/recorder.py)",
+          "model": "SQLite. engagements(id,slug UNIQUE,target_url,archetype,fingerprint_json,posture,...), findings(id, engagement_id FK, slug, title, severity, cvss, bug_class, surface, summary, impact, embedding, discovered_at), hypotheses(engagement_id FK, handle, G/I/T/B, status), payloads, dead_ends, archetype_priors, playbook_outcomes. findings.surface is FREE TEXT (endpoint/feature path), NO asset node_id/obs_id/hypothesis FK.",
+          "persistence": "Durable SQLite via memory.Store (same connection that backs intel_* tables). record_finding/record_hypothesis/record_engagement_* writers.",
+          "tenant_scoped": true
+        },
+        {
+          "name": "Planner goal-tree (goals entity)",
+          "path": "/home/kali/vigil/engine/crucible/framework/v2/planner/goal_tree.py (checkpoint planner/resume.py)",
+          "model": "In-memory GoalTree{nodes: dict[int,GoalNode]}. GoalNode(id, parent_id, label, kind:root/goal/subgoal/leaf, status, prior_p_success, value, estimate/actual cost, children, attempts, bug_class, surface, notes). VOI/EIG scoring. Leaves carry bug_class+surface.",
+          "persistence": "Per-slug JSON checkpoint targets/<slug>/.planner-state.json every 60s (gitignored) via resume.py; carries tree + budget + agent cursors + blackboard cursor. NOT in a shared DB; not joined to the asset graph.",
+          "tenant_scoped": false
+        },
+        {
+          "name": "promote.py recon->endpoint bridge (lead projector, not a store)",
+          "path": "/home/kali/vigil/engine/crucible/framework/v2/intel/promote.py",
+          "model": "promote_to_endpoints(world, slug): pure projector. Promotes each IN-SCOPE DOMAIN/HOST (-> https://host/) and web-ish SERVICE (-> scheme://host[:port]/) to a url-bearing Node(id='endpoint:promoted:<url>', kind=ENDPOINT, attrs={url,host,promoted_from}, provenance='intel:promote:<src>', confidence=0.5) = a LEAD. Read by engage_autonomous._endpoint_probe_targets to seed OODA probe-leaves. Called only on opt-in discover path (engage_autonomous.py ~1327).",
+          "persistence": "Writes LEAD nodes into the in-memory world-model only (idempotent upsert, seq from world's monotonic clock). Durability follows the world-model: recomputed per run unless world JSON is persisted.",
+          "tenant_scoped": false
+        }
+      ],
+      "entities_present": [
+        "assets: STRONG & DURABLE \u2014 world-model asset nodes (DOMAIN/HOST/SERVICE/CERTIFICATE/ASN/NETBLOCK/ORGANIZATION/IDENTITY/APPLICATION/PACKAGE) + intel_entities/intel_entity_members (resolved, slug-scoped SQLite); source-of-truth is intel_observations",
+        "goals: PRESENT but ISOLATED \u2014 planner GoalTree (GoalNode root/goal/subgoal/leaf) persisted only as per-slug .planner-state.json; blackboard 'hypothesis'/'plan' events",
+        "actions: PRESENT \u2014 blackboard 'action' + 'tool_call' events (ActionPayload: tool, args_summary, target_url, plan_id)",
+        "results: PRESENT \u2014 blackboard 'result' + 'tool_result' events (ResultPayload: action_id, success, status_code, body_excerpt, evidence_path)",
+        "leads: STRONG but SCATTERED across 3 reps \u2014 promoted ENDPOINT nodes (intel:promote, conf 0.5), VULNERABILITY/INDICATOR nodes (threat-intel LEADs), intel_observations with LEAD source_kinds (web_scanner/misp/stix/mcp_tool/cloud_posture/request_telemetry/llm_interaction/auth_telemetry), blackboard 'observation' events. No unified lead node with a lifecycle state.",
+        "verification: PARTIAL \u2014 blackboard 'critique'/'critic_verdict' events + oracle seam (FindingPayload.verified_by_oracle/oracle_kind/oracle_context) + evidence PCF re-runnable certs. NOT a graph node linking lead->verification->outcome.",
+        "findings: PRESENT (3 reps, unlinked) \u2014 MLS findings table (durable, surface=free text), blackboard 'finding' events, world-model FINDING nodes (ONLY via opt-in spine_projector)",
+        "remediation: ABSENT as a durable entity \u2014 only generated report text (report/) + remediation_binary/ (ASan binary-patch repair module); no remediation row/edge keyed to a finding",
+        "retests: ABSENT as a durable entity \u2014 only human reports/retest.md; no retest/status rows linking a retest observation back to its finding"
+      ],
+      "links_present": [
+        "asset<->asset (world-model edges, in-memory): RESOLVES_TO, PRESENTS_CERT, ANNOUNCES, HOSTS, RUNS, ASSET_OWNS, SAME_AS, CO_HOSTED_WITH, DEPENDS_ON \u2014 STRONG",
+        "observation->asset (DURABLE): intel_observations.subject_node_id / object_node_id / claim_key \u2014 the evidence-join key, slug-scoped",
+        "entity-resolution links (DURABLE audit): intel_merge_log (a_node_id,b_node_id,trigger,llr_bits) + intel_entity_members \u2014 how refs fused into one asset",
+        "lead(endpoint)->asset: promote.py attrs.promoted_from + provenance intel:promote:<src> \u2014 IN-MEMORY only",
+        "vuln->asset: AFFECTS edge (threat-intel LEAD; SBOM oracle proves version-range membership)",
+        "finding->asset: EVIDENCES edge (finding -> each asset it evidences) \u2014 built ONLY by opt-in worldmodel/spine_projector.project_spine (P4), NOT on default engage path; a FINDING node is CONFIRMED only with BOTH signed evidence_ref AND signature_ref",
+        "finding->hypothesis: FindingPayload.derived_from_hypothesis \u2014 exists on the SPINE only; DROPPED when recorded to MLS findings table",
+        "action->result: ResultPayload.action_id (free-text handle within spine, not an edge/FK)",
+        "goal->plan->action: plan_id / targets_hypothesis free-text handles in spine payloads (not edges, not indexed as a path)",
+        "engagement join: the slug string is the ONLY cross-store join (intel_observations.engagement_slug == bb_engagements.slug == engagements.slug == planner checkpoint path). The three SQLite stores deliberately use INDEPENDENT integer ids ('IDs are not shared because the two stores are independent' \u2014 agents/schema.sql)."
+      ],
+      "safety_gates": [
+        "FACT-minting authority preserved: promote.py writes LEADs only (intel:promote provenance, GROUNDING_INTEL, confidence 0.5) and is doc'd 'a LEAD, never a fact'; planner/LLM cannot self-promote; spine_projector mints a CONFIRMED FINDING node ONLY with both non-empty signed evidence_ref AND signature_ref (_finding_confirmed), a bare status=fact is a LEAD; FindingPayload.critique_status 'confirmed' is RESERVED for a fired deterministic oracle; classify_provenance() is the single source of 'is this grounded'.",
+        "In-scope by construction (promote.py): host_matches_scope over parse_scope(slug) = the EXACT predicate the live per-request gate uses; built URL is round-tripped through extract_hostname so a scope-string-matching authority delimiter (evil.com#.example.com) or CIDR can't slip; categorical protected-domain floor is_hard_blocked (gov/mil/edu/IGO, default-ON, VIGIL_ALLOW_PROTECTED_DOMAINS) applied at the keystone AND re-gated fail-closed at probe time (kill-switch->entitlement->charter-scope->destructive->egress).",
+        "Append-only + tamper-evidence: blackboard SQL triggers refuse UPDATE/DELETE; spine_chain hash-linked + m-of-n governance-signed head; engagement_id bound into each digest (no cross-engagement head replay); verify fails closed on a truncated/altered/reordered/deleted log; grounded-only refutation (an unauthenticated refute cannot un-prove a proof).",
+        "Tenant isolation: per-process CRUCIBLE_TENANT shard dir for .memory/.blackboard; active_tenant() fails CLOSED on an unsafe id (no silent fallback to the shared singleton); a tenant worker can only ever name its own shard; spine digest + head slug-binding reject cross-engagement/cross-tenant reuse.",
+        "Evidence integrity/signing + no secrets in labels: seal-at-capture encrypts credential-bearing spine excerpts before they land (DEK in evidence_keys_dir OFF the spine for crypto-shred); PCF certs re-runnable, evidence-altered rejected at verify; world-model/plan-input/world JSON written owner-only via secure_write; monotonic seq (never wallclock) keeps projection deterministic/replayable."
+      ],
+      "gaps": [
+        "No single traversable investigation graph: the 9 entity types live in 4+ disjoint stores (in-memory world-model/JSON, intel SQLite, blackboard SQLite, MLS SQLite, planner per-slug JSON) with NO shared ID space. Only the engagement slug STRING joins them; the SQLite stores use independent integer ids by design. You cannot query asset -> goal -> action -> result -> lead -> verification -> finding -> remediation -> retest as one path.",
+        "finding->asset link is not durable on the default path: EVIDENCES edges + FINDING nodes are produced ONLY by the opt-in worldmodel/spine_projector (P4); the durable MLS findings.surface is FREE TEXT with no asset node_id / obs_id / canonical_id FK. A confirmed finding is not durably joined to the lead/asset that produced it.",
+        "No durable goal->action->result->finding chain of custody: the spine carries plan_id/action_id/targets_hypothesis/derived_from_hypothesis as free-text handles inside payload_json, not as edges and not indexed as a traversable path; derived_from_hypothesis is even dropped when a finding is written to the MLS table.",
+        "No remediation entity: there is no store/row/edge for a remediation keyed to a finding_slug (only generated report prose and the remediation_binary ASan repair module). The investigation model's remediation node has nowhere durable to live.",
+        "No retest entity: there is no durable retest/status node linking a retest observation (Verified Fixed/Bypassed/Risk-Accepted) back to the original finding (only the human reports/retest.md).",
+        "Leads have no persisted lifecycle/state and are recomputed per run: promote.py writes ENDPOINT leads only into the in-memory world-model, which is NOT durably persisted by default \u2014 a lead's state (new->queued->verifying->confirmed/refuted) and its verification outcome are not tracked as linked nodes across runs; the scanner/VULNERABILITY/INDICATOR leads in intel_observations likewise carry no explicit lead-state or lead->verification link.",
+        "Coverage is not modeled as a graph: there is no durable representation of which in-scope assets/surfaces were probed vs skipped vs deferred joined to the asset graph; goal-tree leaf status lives only in the per-slug .planner-state.json checkpoint, disconnected from intel_entities.",
+        "Verification is an event, not a linked node: critique/critic_verdict/oracle_context exist on the spine but there is no verification node connecting a specific lead -> its verification attempt -> outcome -> the finding (or the refutation), so 'nothing found' cannot be shown as an explicit CLEAN-with-checks node tied to the asset it cleared."
+      ],
+      "extend_not_rebuild": "Extend the Intel durable store (memory/intel_schema.sql + intel/store.py), which shares ONE SQLite connection (memory.Store) with the MLS engagements/findings/hypotheses tables \u2014 do NOT add a new graph DB (Neo4j/Kuzu). Rationale: this store already persists a typed, provenance-tagged, Beta-belief node/edge graph with engagement_slug scoping, monotonic-seq determinism, idempotent upserts, and an append-mostly audit (intel_merge_log is already an audit-of-links); the world-model is merely its in-memory projection, so the graph's source of truth is already here. Add slug-scoped link + lifecycle tables in the SAME DB, keyed on the stable ids that already exist (obs_id, canonical_id, world-model node id '{kind}:{key}', hypothesis.handle, goal node id, finding.slug, evidence cert id): e.g. investigation_edges(engagement_slug, src_kind, src_id, edge, dst_kind, dst_id, provenance, grounding, evidence_ref, seq) to record asset->goal->action->result->lead->verification->finding edges as provenance-tagged rows; lead_state(engagement_slug, lead_id, state, verified_by, obs_id) for the lead lifecycle; remediation(engagement_slug, finding_slug, status, ...) and retest(engagement_slug, finding_slug, verdict, evidence_ref, seq) for the two missing entities. Measured scale (a few thousand nodes/edges per engagement, slug-scoped traversals) is well within SQLite recursive-CTE range, so no new engine is justified. Preserve every gate: link rows record provenance/grounding only and are INTEL-tier unless they cite a signed evidence_ref (FACT authority stays at the oracle seam); reject any src/dst id whose embedded engagement_slug/tenant differs from the row's (the slug column + per-process tenant shard already give that boundary); never write a credential/secret into a label (reuse seal-at-capture + secure_write).",
+      "notes": "Code read read-only under /home/kali/vigil/engine/crucible/framework/v2; worktree duplicates under .claude/worktrees/test-merged were ignored. No files edited, no tools run, no traffic, ARTEX never touched. DATA-FLOW of the dimension: collectors -> intel Observation (models.py, Admiralty-rated, polarity, monotonic seq) -> IntelIngest single-writer (ingest.py) does persist(intel_observations) -> project_observation onto in-memory WorldModel -> resolve entities -> persist(intel_entities/members/merge_log), all stamped engagement_slug. On the opt-in DISCOVER path, promote_to_endpoints(world, slug) projects in-scope DOMAIN/HOST/web-SERVICE assets into url-bearing ENDPOINT LEAD nodes that engage_autonomous._endpoint_probe_targets seeds the OODA loop from (promote.py is 'the single missing edge' recon->test, doc'd keystone). Separately the blackboard spine records the observation/plan/action/result/finding narrative (append-only, hash-chained, slug/tenant-bound), and the MLS records confirmed findings for cross-engagement learning. THE CENTRAL FINDING: assets and leads are discovered and persisted well (intel_observations/intel_entities are the durable, slug-scoped, provenance+belief-carrying ground truth, and the world-model is their replayable projection), but they are NOT linked into an engagement-wide evidence graph: four stores with no shared id space, finding->asset edges only on an opt-in projector, and no remediation/retest entities at all. The build should EXTEND the intel SQLite store with slug-scoped edge/lifecycle/remediation/retest tables under the existing memory.Store connection rather than stand up a new graph DB. All FACT-authority, append-only/tamper-evidence, tenant-isolation, in-scope-by-construction, and evidence-sealing gates are intact and must be carried into any new link tables verbatim."
+    },
+    {
+      "dimension": "goals-actions-results",
+      "stores": [
+        {
+          "name": "Blackboard event spine (append-only OODA event stream) \u2014 the authoritative action/result record",
+          "path": "/home/kali/vigil/engine/crucible/framework/v2/.blackboard/store.sqlite (schema: /home/kali/vigil/engine/crucible/framework/v2/agents/schema.sql; API: agents/blackboard.py; sink: agents/spine_sink.py; payload models: agents/models.py)",
+          "model": "SQLite. Table bb_engagements(id, slug UNIQUE, started_at, closed_at). Append-only table events(id, engagement_id FK->bb_engagements, kind CHECK-enum, agent_name, posted_at, payload_json, parent_id FK->events, supersedes_id FK->events), indexed (engagement_id,kind),(engagement_id,id),parent_id. kind in {observation,hypothesis,plan,action,result,finding,critique,decision,reward,critic_verdict,reflection,refusal,tool_call,tool_result,agent_message}. Each kind has a pydantic payload (PAYLOAD_BY_KIND) validated at post(); parent_id is the provenance edge (tool_result.parent_id=tool_call_id; tool_call.parent_id=driving hypothesis/decision).",
+          "persistence": "Durable SQLite, WAL, APPEND-ONLY enforced by SQL triggers refusing UPDATE/DELETE (supersession-only). Also projected at end of a live OODA run to inert signed bytes <run_dir>/spine-head.json + spine-chain.json (crucible-blackboard-chain domain), offline-verifiable.",
+          "tenant_scoped": true
+        },
+        {
+          "name": "GoalTree planner state (the goal tree = goals + actions-as-leaves, in-run)",
+          "path": "/home/kali/vigil/engine/crucible/framework/v2/planner/goal_tree.py (in-memory GoalTree/GoalNode); checkpoint /home/kali/vigil/targets/<slug>/.planner-state.json via planner/resume.py (paths.planner_state)",
+          "model": "In-memory. GoalNode (pydantic): id, parent_id, kind(root|leaf), label, prior_p_success, value, status(open|claimed|resolved|pruned), bug_class, surface, CostEstimate/CostActual. Built per-cycle by engage_autonomous._build_goal_tree: one leaf per confirmed finding (reverify-leaf, kept in leaf_to_finding) + optional low-prior probe-leaves from world-model ENDPOINT nodes (discovery, absent from leaf_to_finding). Serialized via to_json/from_json.",
+          "persistence": "Single-slot LATEST-state checkpoint (resume only), ~60s cadence, gitignored/ephemeral, overwritten \u2014 NOT a durable history of goals/actions. 0700 target dir.",
+          "tenant_scoped": false
+        },
+        {
+          "name": "OutcomeLedger (results-as-learning: confirm/refute outcomes + calibration)",
+          "path": "/home/kali/vigil/targets/<slug>/outcomes.json (calibration/ledger.py; written under --learn by engage_autonomous run loop; read by meta-monitor _meta_caution)",
+          "model": "JSON. Predictions + Outcomes keyed by finding ledger-id / feature-hash; confirm/refute result of each driven leaf; calibration data the meta-monitor reads to order (not gate) effort next run.",
+          "persistence": "Durable JSON, owner-only 0700 via secure_write; slug-scoped.",
+          "tenant_scoped": false
+        },
+        {
+          "name": "PhaseLedger (coarse phase/goal + gate progress)",
+          "path": "/home/kali/vigil/engine/crucible/framework/v2/phase_ledger.py; files <base>/<slug>.phases.jsonl + phase_report snapshot (paths.phase_ledger_path/phase_report_path)",
+          "model": "JSONL of ORDERED_PHASES transitions (start/complete/skip/fail per phase: transfer/scan/intel/assess/chaining/grounding/fusion/defender/reasoning); RESUMABLE_PHASES governs resume; each transition also mirrored to the spine as an observation event.",
+          "persistence": "Durable JSONL 0600; resume-aware. Re-roots onto tmpfs under ephemeral/ZDR.",
+          "tenant_scoped": false
+        },
+        {
+          "name": "F4 integration graph read-model (derived typed attack-chain/investigation graph)",
+          "path": "/home/kali/vigil/integration/vigil_integration/graph/{model.py,projector.py,query.py} (in-memory GraphView); live Neo4j binder integration/vigil_integration/live/graph_neo4j.py + graph_driver.py; snapshots /home/kali/vigil/.vigil-live/graph/*.json",
+          "model": "Typed DAG. Nodes: AttackChain, ChainStep, ChainFinding, ChainFailure, ChainDecision + bridge CVE/Host/Port/Technology/Endpoint. Edges: HAS_STEP, NEXT_STEP, LED_TO, DECISION_PRECEDED, PRODUCED, FAILED_WITH, STEP_TARGETED/EXPLOITED/IDENTIFIED, FOUND_ON, FINDING_AFFECTS_*. ConfirmationStatus CONFIRMED vs LEAD (enforced in query). Provenance{spine_hash(identity), signature_ref, evidence_ref, engagement_id}. Bi-temporal valid_from/invalid_from keyed on spine SEQUENCE (no wallclock).",
+          "persistence": "PROJECTION-ONLY, rebuildable from signed spine records; projector is the ONLY writer. Neo4j partition CLEARED+rewritten each project() call. In-memory GraphView otherwise. Deterministic.",
+          "tenant_scoped": false
+        },
+        {
+          "name": "Memory/MLS store (cross-engagement learning; holds hypotheses \u2014 adjacent to goals)",
+          "path": "/home/kali/vigil/engine/crucible/framework/v2/.memory/*.sqlite (memory/store.py, memory/schema.sql, memory/intel_schema.sql)",
+          "model": "SQLite. Tables engagements, findings, hypotheses(engagement_id, handle, bug_class, status; UNIQUE(engagement_id,handle)), payloads, dead_ends, archetype_priors, playbook_outcomes, intel_observations/entities/merge_log/source_yield. Engagement_id FK throughout.",
+          "persistence": "Durable SQLite; cross-engagement priors.",
+          "tenant_scoped": true
+        }
+      ],
+      "entities_present": [
+        "goals \u2014 PARTIAL/ephemeral: GoalTree root+leaves (planner/goal_tree.py) + objectives (crown-jewel NodeKinds DATASTORE/CLOUD_RESOURCE) + PhaseLedger phases + AttackChain/ChainDecision in F4 graph + MLS hypotheses table; mirrored to spine as hypothesis/decision events but not a durable goal node",
+        "actions \u2014 PRESENT (strong on spine): tool_call events emitted by agents/tools/invoker.invoke_tool BEFORE the gated run; AutonomyStep.tool/gated/refused/gate telemetry; legacy plan+action kinds from agents/exploit_agent.py; ChainStep node type in F4 graph",
+        "results \u2014 PRESENT (strong on spine): tool_result events (+ observation for progress/leads) with parent_id=tool_call_id; grounding verdict (admitted.is_fact) folded into world-model node attrs (autonomy_reverify) and into OutcomeLedger confirm/refute; legacy result kind; ChainFinding/ChainFailure in F4 graph",
+        "leads \u2014 PRESENT (adjacent): observation/tool_result mirrored as LEADS not facts (reachability GROUNDING_INTEL, probe-leaves, scanner progress, sensor_inconclusive); F4 graph LEAD nodes",
+        "verification \u2014 PRESENT (adjacent): drive_reverify -> gated reverify_finding tool -> veracity firewall re-executes retained oracle certificate; the sole FACT authority",
+        "findings \u2014 PRESENT (adjacent): finding events (FindingPayload); ScanReport.active_findings; MLS findings table; F4 ChainFinding; targets/<slug>/findings/NNN-*.md",
+        "assets \u2014 PRESENT (adjacent): WorldModel graph nodes (ENDPOINT/HOST/WEBAPP/DATASTORE/CLOUD_RESOURCE) in worldmodel/graph.py; F4 bridge Host/Port/Endpoint/Technology/CVE"
+      ],
+      "links_present": [
+        "action->result: tool_result.parent_id=tool_call_id spine edge",
+        "goal->action: tool_call.parent_id -> hypothesis/decision event",
+        "step->finding: F4 PRODUCED/LED_TO/FAILED_WITH",
+        "decision->step: F4 DECISION_PRECEDED",
+        "step->asset: F4 STEP_TARGETED/EXPLOITED/IDENTIFIED",
+        "finding->asset: F4 FINDING_AFFECTS_*/FOUND_ON/RELATES_CVE",
+        "result->asset: _fold_observation writes verdict onto world-model node",
+        "refusal: gate refusal recorded as refusal event (evidence)"
+      ],
+      "safety_gates": [
+        "FACT-minting authority preserved: only the veracity firewall re-executing the finding's RETAINED oracle certificate mints a FACT; _finding_payload/_spine_finding_payload set verified_by_oracle/critique_status=confirmed ONLY when admitted.is_fact from LIVE re-grounding (admitted is None -> llm_advisory/not-fact); certificate PRESENCE alone never launders a FACT onto the spine",
+        "Planner never self-promotes: _reprioritise/_select/reasoning-advice are ADVISORY-only \u2014 they re-rank/defer the open frontier, never remove a leaf (coverage doctrine), never feed an oracle/SCE/calibration input, never promote a finding; re-weights recompute from a fixed per-run baseline (idempotent, deterministic)",
+        "'nothing found' never silently CLEAN: sensor_inconclusive posts a distinct typed signal so a not-assessed surface is not folded into a clean negative; SensorResult.inconclusive marker consumed by fuse_sensors",
+        "Graph CONFIRMED <=> oracle-signed: ConfirmationStatus split enforced in graph.query (a LEAD is physically unable to appear in confirmed_findings); a bare refute retires only a LEAD unless oracle-grounded; projector is the ONLY writer and writes ONLY from signed spine records; graph makes nothing true/authorizes nothing",
+        "Action gate fail-closed (invoker.invoke_tool): kill-switch -> entitlement(capability) -> charter-scope -> signed-authority-scope -> destructive-confirm(default-deny) -> egress-allowlist; a denial OR any internal gate error refuses (tool never runs); tool_call recorded BEFORE execution, refusal recorded as evidence",
+        "Append-only integrity: SQL triggers refuse UPDATE/DELETE, supersession-only; post() validates payload per-kind; agent_message anti-spoof (recorded poster authoritative over payload sender claim)",
+        "Tenant isolation: CRUCIBLE_TENANT directory-shards .blackboard/.memory (one tenant/process), fail-closed on unsafe id, a tenant worker can never name another tenant's shard; F4 graph partitioned by group_id (session_id|slug) + CLEAR-by-engagement_id + ScopeGate drops out-of-scope hosts; Provenance.evidence_ref carries engagement_id (charter scope) so cross-tenant/fabricated evidence refs cannot bridge",
+        "Secret redaction: blackboard seal-at-capture (_seal_excerpt_in_place seals raw/body excerpts under the engagement DEK before write; crypto_shred makes them unrecoverable); invoker _args_summary emits dict KEYS only (never values); tool_call records target host only",
+        "Determinism/rebuildability: spine-SEQUENCE temporal coordinate (no wallclock/rng) so the F4 graph is a pure, byte-reproducible, independently verifiable projection of the signed spine"
+      ],
+      "gaps": [
+        "No first-class durable GOAL/ACTION/RESULT nodes keyed to the spine: goals live in an EPHEMERAL in-memory GoalTree whose only persistence is a single-slot gitignored targets/<slug>/.planner-state.json checkpoint that is overwritten each resume; the per-cycle AutonomyStep/AutonomyResult (picked_leaf, tool, verdict, folded_node, reoriented_to, learned) is a RETURN VALUE only \u2014 never written as nodes/edges anywhere queryable",
+        "Three divergent action/result vocabularies, unbridged: (a) live OODA loop posts tool_call/tool_result/hypothesis/observation; (b) legacy MAO agents/exploit_agent.py posts plan/action/result; (c) F4 graph projector consumes a THIRD vocabulary (SpineRecord kind chain|step|finding|decision|failure|refute|bridge). No adapter projects blackboard tool_call/tool_result/hypothesis/decision events into ChainStep/ChainDecision graph nodes",
+        "F4 graph feed is finding-ONLY: live/wiring.graph_project(facts) projects ONLY confirmed finding facts via spine_record_from_finding; the ChainStep/ChainDecision/ChainFailure node types EXIST in graph/model.py but are never emitted from the OODA loop, so actions and results are ABSENT from the derived graph and the goal->action->result->finding path is not materialized",
+        "F4 graph is Neo4j-gated and optional: graph_project is None unless build_neo4j_session_factory() wires a session; a plain engage run produces NO persisted graph (the in-memory GraphView is discarded). An investigation graph must not depend on Neo4j",
+        "Goal->action provenance edge is thin/often unset: _drive_reverify/_drive_probe call invoke_tool WITHOUT an explicit parent_id, so the tool_call lands with parent_id=None and is not spine-linked to the leaf hypothesis _post_leaf_hypothesis posted separately \u2014 the goal->action edge frequently does not exist on the spine",
+        "No result->verification->finding edge and no verification event kind: the reverify grounding verdict is folded into world-model node attrs (autonomy_reverify) and OutcomeLedger, not recorded as a spine edge from the result event to the finding/verification it updates; 'verification' is not an EventKind",
+        "goals-actions-results stores do not link forward to remediation/retests: remediation/retest state lives in separate logs (remediation/attestation_log.py ticks.jsonl = continuous-attestation-log; remediation_binary/) with no edge from a finding/result node to its remediation or retest",
+        "Coarse goals (PhaseLedger phases) and fine goals (GoalTree leaves) are disjoint and neither cross-references the spine action events; objectives (crown-jewel kinds) are computed, never persisted as goal nodes",
+        "Action/result records are engagement-scoped but not stable across re-engagement: a re-engaged slug APPENDS to the same blackboard history (chain grows), and GoalTree/leaf ids are per-run integers with no cross-run stable identity, so an investigation graph cannot address 'the same action' across runs"
+      ],
+      "extend_not_rebuild": "EXTEND the F4 integration graph read-model at /home/kali/vigil/integration/vigil_integration/graph/ (model.py + projector.py + query.py), backed by the EXISTING blackboard SQLite spine as source of truth \u2014 do NOT add a new graph database. The F4 graph already has exactly the required invariants: deterministic spine-derived projection (projector is the only writer), CONFIRMED-vs-LEAD split enforced in query, Provenance keyed on spine_hash+signature_ref+evidence_ref+engagement_id, and bi-temporal valid_from/invalid_from on the spine SEQUENCE. Two concrete extensions: (1) add a blackboard->SpineRecord ADAPTER that reads the append-only events table (tool_call/tool_result/hypothesis/decision/observation/refusal/finding) and emits SpineRecord kinds step/decision/finding/failure, so GOAL(ChainDecision/AttackChain)->ACTION(ChainStep)->RESULT(ChainFinding|ChainFailure) edges (DECISION_PRECEDED/HAS_STEP/PRODUCED/LED_TO/FAILED_WITH) materialize from the SAME spine that already records them; preserve the finding-only CONFIRMED path (confirmation still re-derived by _is_confirmed from signed evidence_ref, never from a tool_result). (2) Make projection non-optional by defaulting the GraphView projection to the in-memory/SQLite path (Neo4j stays an optional mirror), and set tool_call.parent_id to the leaf-hypothesis event in _drive_reverify/_drive_probe so the goal->action edge exists on the spine. Keep GoalTree (.planner-state.json) as the planner's working memory and OutcomeLedger (outcomes.json) as the learning store; the extended graph becomes the durable evidence-linked projection over them. For nodes: reuse ChainStep for ACTION and ChainFinding/ChainFailure for RESULT; add a GOAL label (or reuse AttackChain/ChainDecision) rather than a parallel store.",
+      "notes": "Trace confirms the GOAL/ACTION/RESULT model is spine-centric but only the ACTION and RESULT halves are durably recorded; GOALS are ephemeral. Flow: engage_autonomous.run_autonomous_cycle builds an in-memory GoalTree (_build_goal_tree: reverify-leaves per confirmed finding + optional discovery probe-leaves), ORIENTs via _select (world-aware greedy best_open_leaf_pathaware, opt-in depth>=2 lookahead) with advisory _reprioritise (SMT-infeasible floor + meta-caution + reasoning advice, recomputed from a fixed baseline), then ACTs by driving a gated tool: _drive_reverify->reverify_finding (veracity firewall re-executes the retained oracle cert \u2014 the sole FACT authority), _drive_probe->probe_surface (discovery; mints a NEW finding ONLY if a deterministic oracle fires), _drive_reachability->declared_service (folds LEADS, never facts). Every tool goes through agents/tools/invoker.invoke_tool, the fail-closed gate chain (kill-switch->entitlement->charter-scope->signed-authority->destructive-confirm->egress), which records tool_call BEFORE running and tool_result/refusal after via agents/spine_sink.SpineSink onto the append-only SQLite blackboard (engine/crucible/framework/v2/.blackboard/store.sqlite; kinds+parent_id provenance; per-kind pydantic validation; seal-at-capture secret redaction; UPDATE/DELETE refused by trigger). AutonomyStep/AutonomyResult carry the OODA telemetry (picked leaf, tool, gated/refused/gate, verdict, folded_node, reoriented_to) as RETURN VALUES only. The spine also mirrors the picked leaf as a hypothesis event (_post_leaf_hypothesis) and findings via _mirror_findings_to_spine (tagged with the LIVE grounding verdict so a demoted finding mirrors as a lead, never a laundered FACT). Where goals/actions/results nodes SHOULD live: the existing F4 graph read-model (integration/.../graph/) \u2014 it already projects ChainStep/ChainDecision/ChainFinding/ChainFailure from signed spine records with CONFIRMED/LEAD enforcement and bi-temporal spine-seq coordinates \u2014 but its live feed (wiring.graph_project) currently projects confirmed FINDINGS only and is Neo4j-gated, so actions/results/goals are not yet materialized. Note the legacy plan/action/result EventKinds (agents/exploit_agent.py) are a parallel vocabulary to the OODA tool_call/tool_result and the graph's step/finding records \u2014 a unifying adapter is the central gap. Tenant isolation is directory-shard-level (CRUCIBLE_TENANT, one tenant/process, fail-closed) for .blackboard/.memory; slug-scoped stores (GoalTree checkpoint, OutcomeLedger, PhaseLedger, findings/) sit within a tenant's process; the F4 graph is engagement/session-partitioned (group_id) + ScopeGate. READ-ONLY audit; no files opened under ARTEX; nothing written."
+    },
+    {
+      "dimension": "remediation-retests",
+      "stores": [
+        {
+          "name": "Offense engagement spine (authoritative finding store that remediation/retest key back to)",
+          "path": "/home/kali/vigil/integration/vigil_integration/agent/state.py (Finding/AgentState model) + /home/kali/vigil/integration/vigil_integration/live/spine_vigilcore.py (VigilCoreSpine), persisted at <base_dir>/{slug}.spine",
+          "model": "Hash-chained, Ed25519-signed append-only record log; rebuild() -> AgentState.facts (status=='fact' AND non-empty evidence_ref) vs .leads. Finding model enforces at the type level: a 'fact' MUST carry a signed evidence_ref. This is the source of truth; findings (confirmed/lead) are the last graph-modelled entity and the anchor every remediation/retest links back to via ref + evidence_ref.",
+          "persistence": "Durable signed file per engagement slug, partitioned by run_key; verify()+rebuild() re-check every entry signature and the fact/evidence validator fail-closed (readonly when read).",
+          "tenant_scoped": true
+        },
+        {
+          "name": "F4 attack-chain graph read-model (the investigation graph itself)",
+          "path": "/home/kali/vigil/integration/vigil_integration/graph/model.py + /home/kali/vigil/integration/vigil_integration/graph/projector.py + /home/kali/vigil/integration/vigil_integration/graph/query.py",
+          "model": "Typed GraphView (NodeLabel in {AttackChain,ChainStep,ChainFinding,ChainFailure,ChainDecision,CVE,Host,Port,Technology,Endpoint}; EdgeType in {HAS_STEP,NEXT_STEP,LED_TO,DECISION_PRECEDED,PRODUCED,FAILED_WITH,CHAIN_TARGETS,STEP_*,FOUND_ON,FINDING_RELATES_CVE,FINDING_AFFECTS_ENDPOINT/PORT/TECH}). Every node carries Provenance(spine_hash,signature_ref,evidence_ref,engagement_id,confirmation) + bi-temporal valid_from/invalid_from (spine seq, never wallclock). CONFIRMED only when the spine record carries signed evidence_ref AND signature_ref; monotone LEAD->CONFIRMED with grounded-refutation retire/resurrect. NOTE: the vocabulary has NO remediation/retest node or edge; the chain ends at ChainFinding.",
+          "persistence": "Derived, rebuildable read-model projected ONLY by project() over signed SpineRecords (kinds: chain|step|finding|failure|decision|refute|bridge). In-memory/serialisable; live Neo4j (graph_neo4j.py/graph_driver.py) is the deferred backend. Deterministic: same spine -> byte-identical view.",
+          "tenant_scoped": true
+        },
+        {
+          "name": "Continuous attestation log (THE retest / re-proof tick store)",
+          "path": "/home/kali/vigil/integration/vigil_integration/remediation/attestation_log.py (append_tick/verify_log), driven by /home/kali/vigil/integration/vigil_integration/remediation/reprove.py (run_reprove), default dir <base_dir>/attestation-log/",
+          "model": "Monotonic hash-chained series of signed four-state prove-certs (REMEDIATED/STILL_VULNERABLE/INCONCLUSIVE/REFUSED) from prove_driver.prove_remediation; files ticks.jsonl + head.json + highwater.json + witnessed.jsonl. _derive_series folds consecutive states into a drift vocabulary (present/proven-fixed/still-proven/regressed/inconclusive/refused). Keyed to a finding by the prove-cert finding_id + original_certificate_digest. A REMEDIATED tick EMBEDS a RemediationCertificate that is re-executed at admission.",
+          "persistence": "Append-only, atomic 0600 whole-file rewrite under a cross-process high-water lock; governance m-of-n signed chain head + durable anti-rollback floor (entry_count PRIMARY). verify_log re-runs admission (re-executes every tick incl. embedded remediation cert).",
+          "tenant_scoped": true
+        },
+        {
+          "name": "Remediation certificate VF-1a (portable negative proof, link-back carrier)",
+          "path": "/home/kali/vigil/integration/vigil_integration/remediation/remediation_cert.py",
+          "model": "Signed 'vigil-remediation-cert-v2' dict: verdict='oracle-silent', patched_oracle_context + positive_control_context (+ sha256 of each), controls{positive_control,liveness,freshness_nonce,repeats}, finding_ref, original_finding_cert_digest (references the positive finding cert -> binds exploitable->remediated). Whole-cert Ed25519 so no control can be stripped.",
+          "persistence": "Minted as a dict, not a standalone store; rides inside REMEDIATED prove-cert ticks in the attestation log; verify_remediation_certificate re-derives (silent+control_fires+live+bound+authentic) offline by re-execution.",
+          "tenant_scoped": true
+        },
+        {
+          "name": "PCR remediation attestation W5 (two-oracle static-fix cert)",
+          "path": "/home/kali/vigil/integration/vigil_integration/remediation/attestation.py (mint_remediation_attestation), written by cli _maybe_mint_attestation to <repo_base_dir>/{slug}-{safe_ref}.attestation.json",
+          "model": "Signed 'vigil-remediation-attestation-v1': binds VULN-GONE (codescan.verify_finding_cleared re-run over the patched tree) + BEHAVIOR-PRESERVED (real suite ran+passed) via finding_ref, oracle_kind=daa:<rule_id>, base/patched tree digests, diff digest, original_evidence_ref. Minting fail-closed (refuses unless vuln-gone). Demote-only re-verification.",
+          "persistence": "One JSON file per finding (0600), offline-re-verifiable; m-of-n Ed25519.",
+          "tenant_scoped": true
+        },
+        {
+          "name": "Posture attestation series (config/coverage retest dual of reprove)",
+          "path": "/home/kali/vigil/integration/vigil_integration/posture/series.py + /home/kali/vigil/integration/vigil_integration/posture/reprove.py, at <series_dir>/",
+          "model": "Same chain+head+highwater primitives over PostureCertificate digests; files ticks/<seq>.json + chain.json + head.json + highwater.json. A retest surface for posture (not per-finding).",
+          "persistence": "Append-only signed, anti-rollback high-water floor.",
+          "tenant_scoped": true
+        },
+        {
+          "name": "Codefix / autopatch remediation-ACTION result (ephemeral)",
+          "path": "/home/kali/vigil/integration/vigil_integration/remediation/codefix.py (run_codefix/CodeFixResult/PipelineStep) + /home/kali/vigil/integration/vigil_integration/autopatch/loop.py",
+          "model": "CodeFixResult{remediation_id, status, opened_pr, remediated, evidence_ref, pr_ref, edited_paths, verification:FixVerification, steps:[PipelineStep(seq,stage,tier,outcome,reason,redacted payload)]}. Embeds CodeFixRequest.finding (the confirmed TriageFinding); remediation_id derives from signed finding provenance. verify_fix signs 'remediated' only when the original exploit oracle goes SILENT.",
+          "persistence": "In-memory/returned only \u2014 the audit step log is explicitly inert ('the spine write is deferred'); the remediation ACTION itself is NOT durably persisted or linked. Only a terminal cert (if minted) persists.",
+          "tenant_scoped": false
+        },
+        {
+          "name": "Trusted-finding seam + inert finding envelope (the link-back trust source)",
+          "path": "/home/kali/vigil/integration/vigil_integration/live/trusted_finding.py (finding_from_spine/finding_from_envelope) + /home/kali/vigil/integration/vigil_integration/inert_finding.py + /home/kali/vigil/integration/vigil_integration/offense_worker.py",
+          "model": "Reconstructs a cryptographically-grounded CONFIRMED TriageFinding (ref + evidence_ref) that every remediate/patch/reprove command keys on \u2014 from the signed spine (verify+rebuild) or an m-of-n governance-signed inert envelope {certificate{finding_ref,oracle_context_digest,engagement_slug},signatures[]} (json-only, size-bounded). This IS the mechanism by which a remediation/retest links back to its finding.",
+          "persistence": "Envelope is an operator-provided signed file; spine load is verify+rebuild of {slug}.spine. No raw-JSON finding is ever accepted.",
+          "tenant_scoped": true
+        }
+      ],
+      "gaps": [
+        "No remediation or retest NODE/EDGE types in the F4 graph. NodeLabel/EdgeType (graph/model.py) stop at ChainFinding; there is no Remediation/Retest node and no REMEDIATES / RETESTED_BY / REPROVES edge. The investigation chain's findings->remediation->retests tail is structurally absent from the graph.",
+        "The projector (graph/projector.py) handles only kinds {chain,step,finding,failure,decision,refute,bridge}; no 'remediation'/'reprove_tick' kind exists, so no remediation cert or re-proof tick is ever projected. You cannot traverse finding -> remediation -> retest inside a GraphView.",
+        "Links are soft foreign keys (finding_ref / finding_id / original_finding_cert_digest / original_certificate_digest / original_evidence_ref) scattered across separate signed artifacts (spine, attestation-log ticks.jsonl, {slug}-{ref}.attestation.json, embedded RemediationCertificates). No index/join returns, for a given finding, its remediation(s) and its retest series \u2014 a consumer must know the base_dir/log_dir/file convention and scan.",
+        "The drift state machine (proven-fixed / still-proven / regressed / present / inconclusive / refused) is computed only in attestation_log._derive_series and lives in the tick log; it is never reflected on the finding node. A graph query over confirmed_findings cannot distinguish never-remediated vs proven-fixed vs regressed.",
+        "The remediation ACTION (codefix/autopatch: gated clone->edit->build->PR, per-block approvals, m-of-n quorum, denials) is not durably persisted \u2014 CodeFixResult.steps are inert, 'the spine write is deferred'. So an attempted-but-denied remediation leaves no linkable record; the coverage graph can't show 'remediation attempted, blocked at PR quorum'.",
+        "No per-finding freshness/staleness surface. The honest residual is 'freshness = last cadence fire', but nothing records last-retest time per finding or flags a fixed finding whose re-proof cadence has lapsed; the graph cannot answer 'which fixed findings are overdue for re-proof'.",
+        "The continuous attestation-log default dir is per-base-dir (<base_dir>/attestation-log), not namespaced per-finding or per-tenant, and the CLI reprove drives ONE finding per run. Nothing structurally prevents two findings' monotonic tick series from being written into the same log_dir, and there is no registry of which findings have a running retest cadence.",
+        "'Verification' (the target model's distinct stage between leads and findings) is collapsed into the finding node's Provenance boolean (CONFIRMED + evidence_ref) plus out-of-graph cert re-execution; it is not a first-class node linking finding<->evidence<->oracle, so the verification artifact that a remediation's negative cert mirrors is not itself graph-addressable."
+      ],
+      "notes": "The remediation-retests dimension is implemented as a cryptographic, offline-re-verifiable layer that sits ALONGSIDE the F4 investigation graph, not inside it. Flow: a CONFIRMED finding on the signed offense spine ({slug}.spine) is reconstructed as a trusted TriageFinding (live/trusted_finding.py); may_remediate/spawn_remediation (remediation/triage.py) gate it \u2014 only an oracle-confirmed FACT with a signed evidence_ref may spawn a remediation, a LEAD never can, enforced twice (type validator _confirmed_needs_evidence + spawn boundary). The gated destructive codefix pipeline (remediation/codefix.py) and the AIxCC autopatch loop (autopatch/loop.py) propose->apply-in-sandbox->build->PR->verify; verify_fix signs 'remediated' ONLY after the original exploit oracle goes SILENT on the patched build. Remediation is proven by a NEGATIVE proof-carrying artifact (remediation/remediation_cert.py, VF-1a: earned-by-silence with positive-control + liveness controls, whole-cert signed) and/or a two-oracle PCR attestation (remediation/attestation.py, VULN-GONE + BEHAVIOR-PRESERVED). RETESTS are the continuous re-proof loop (remediation/reprove.py) re-firing the retained oracle_context each cycle and appending signed four-state prove-cert ticks to the anti-rollback attestation log (remediation/attestation_log.py), yielding a drift timeline (proven-fixed/regressed/...). A remediation/retest links back to its finding purely by finding_ref/finding_id/original_*_digest foreign keys carried in each signed cert \u2014 never by a graph edge. The graph (graph/) models assets->goals->actions->results->leads->verification->findings as a spine-derived read-model and stops there; remediation and retests are present as DATA but absent as graph ENTITIES. Target-model mapping: assets=Host/Port/Technology/Endpoint/CVE bridge nodes; goals=AttackChain; actions=ChainStep; results=ChainFinding/Failure/Decision; leads=ChainFinding(LEAD); verification=CONFIRMED+evidence_ref (partial, in provenance); findings=ChainFinding(CONFIRMED); remediation & retests = out-of-graph signed certs/logs. Tenant/engagement scoping is by engagement slug/group_id/charter scope (there is no tenant_id primitive here); cross-engagement laundering is refused at the finding seam (inert_finding scope-binding, trusted_finding engagement_slug==scope). Paths are absolute under /home/kali/vigil.",
+      "entities_present": [
+        "assets (Host/Port/Technology/Endpoint/CVE bridge nodes \u2014 in graph)",
+        "goals (AttackChain \u2014 in graph)",
+        "actions (ChainStep \u2014 in graph)",
+        "results (ChainFinding/ChainFailure/ChainDecision \u2014 in graph)",
+        "leads (ChainFinding with ConfirmationStatus.LEAD \u2014 in graph)",
+        "verification (PARTIAL: confirmation flag + evidence_ref on the node provenance + out-of-graph prove/remediation cert re-execution; not a first-class node)",
+        "findings (ChainFinding with ConfirmationStatus.CONFIRMED \u2014 in graph)",
+        "remediation (RemediationCertificate / PCR attestation / CodeFixResult \u2014 present as signed DATA, NOT a graph entity)",
+        "retests (attestation-log four-state prove-cert tick chain + reprove loop + posture series \u2014 present as signed DATA, NOT a graph entity)"
+      ],
+      "links_present": [
+        "finding -> {assets,goals,actions,results,leads}: real graph edges (PRODUCED, LED_TO, FOUND_ON, FINDING_AFFECTS_ENDPOINT/PORT/TECH, FINDING_RELATES_CVE, HAS_STEP, NEXT_STEP, CHAIN_TARGETS, FAILED_WITH, DECISION_PRECEDED)",
+        "remediation -> finding: SOFT FK only (RemediationCertificate.finding_ref + original_finding_cert_digest; attestation.finding_ref + original_evidence_ref; CodeFixRequest.finding embeds the TriageFinding; spawn_remediation/may_remediate boundary)",
+        "retest -> finding: SOFT FK only (prove-cert finding_id + original_certificate_digest; ProveTarget.finding_id; attestation-log ticks keyed by finding_id; build_live_prove_target(finding_id=finding.ref, original_certificate_digest=finding.evidence_ref))",
+        "retest -> remediation: a REMEDIATED tick embeds + re-executes the RemediationCertificate; the drift series (proven-fixed/still-proven/regressed) is the retest-over-remediation state machine \u2014 but held only in the tick log, no graph edge",
+        "verification -> finding: node Provenance.confirmation + evidence_ref, plus the independent prove/remediation cert re-execution oracle (verify_prove_certificate / verify_remediation_certificate)",
+        "NONE of the remediation/retest links are graph edges \u2014 all are foreign keys across separate signed logs"
+      ],
+      "safety_gates": [
+        "may_remediate / may_spawn_remediation: a remediation spawns ONLY from an oracle-confirmed FACT carrying a signed evidence_ref; a LEAD/non-TriageFinding/evidence-less confirmed is refused fail-closed, enforced twice (TriageFinding._confirmed_needs_evidence type validator + the spawn boundary)",
+        "Trusted-finding grounding: the driving finding is NEVER built from raw JSON (trivially forgeable); only from a verify+rebuilt signed spine or an m-of-n governance-signed inert envelope, with confirmed=True set ONLY after signature verification (live/trusted_finding.py, inert_finding.py)",
+        "Remediation cert earned-by-silence: mint refuses unless positive_control FIRES + patched context is SILENT + liveness (target answered); the whole cert is Ed25519-signed so no control can be stripped; verify re-executes offline (silent+control_fires+live+bound+authentic) \u2014 silence without positive-control/liveness is INDETERMINATE, never 'fixed'",
+        "Four-state prove-cert discipline: only ONE narrow path reaches REMEDIATED; REFUSED (testing must not begin) and INCONCLUSIVE (claim not earned) are SIGNED so a reason cannot be stripped and re-read as success; the live oracle over the wire bytes is the sole verdict authority",
+        "Attestation-log anti-rollback: hash-chain + governance m-of-n signed head + durable high-water floor (entry_count PRIMARY guard) advanced upward-only under a cross-process lock; admission (verify_prove_certificate) rejects unauthentic ticks at the door; verify_log re-runs admission and re-executes every REMEDIATED tick's embedded remediation cert",
+        "Codefix destructive-pipeline gates: tiered A1(clone)/A2(edit)/A3(build+PR) via the injected conjunctive gate; per-block approval TIMEOUT => REJECT (the critical flip vs redamon auto-accept); NEVER 'git add -A' (explicit path validation, bulk/flag/.. refused); m-of-n quorum required to open a PR; protected-domain categorical floor (.gov/.mil/.edu/.int/IGO); verify_fix signs 'remediated' only on oracle silence + a real signed cert",
+        "Secret-free provenance: every recorded pipeline payload is scrubbed through the one F3 redact_tool_args path; CodeFixRequest has no credential/token field (two-container isolation keeps creds in injected executors)",
+        "Determinism / no-wallclock-in-signed-math: spine seq is the temporal coordinate; remediation_id and step seq derive from signed provenance / injected counters, not uuid/wallclock; every now/run_id/freshness_nonce is a caller input, so two identical runs re-derive identical chain digests",
+        "Scope / tenant binding (anti-laundering): engagement_slug is bound to the delegated scope and to the finding's own signed slug; a cross-engagement finding_ref is refused; the projector admits recon bridges only through an injected scope_gate and demotes a confirmed fact only on an oracle-GROUNDED refutation (bi-temporal retire, never delete; grounded refutes are not auto-resurrected)",
+        "Keyless offense worker: offense runs with no owner signing key and crosses a finding only as inert signed DATA; it cannot mint governance actions (confused-deputy fix), and fsjob job_spawn re-checks the target tool through the same sovereign boundary a direct call clears"
+      ],
+      "extend_not_rebuild": "EXTEND the F4 graph read-model at /home/kali/vigil/integration/vigil_integration/graph/ (model.py + projector.py), fed from the already-signed artifacts \u2014 do NOT add a new graph DB. Concretely: (1) add NodeLabels REMEDIATION and RETEST (reproof tick) and EdgeTypes REMEDIATES (Remediation->ChainFinding), REPROVES/RETESTED_BY (Retest->Remediation|ChainFinding), plus a drift/supersede relation; (2) add projector record kinds 'remediation' and 'reprove_tick' so the single-writer invariant holds \u2014 emit a SIGNED spine record when a RemediationCertificate is minted or an attestation-log tick is appended, carrying the cert digest + finding_ref + verdict; the projector sets provenance.spine_hash = cert digest and marks the node CONFIRMED only when the referenced cert INDEPENDENTLY re-verifies (reuse verify_remediation_certificate / verify_prove_certificate as the oracle \u2014 never trust the cert's self-claim), exactly mirroring projector._is_confirmed; (3) carry the drift label (proven-fixed/regressed/...) from attestation_log._derive_series onto the finding via a status edge, and reuse the EXISTING bi-temporal retire/resurrect machinery \u2014 a REGRESSED tick is an oracle-grounded refutation that retires the proven-fixed state; a later REMEDIATED resurrects. Keep the spine + attestation logs as the source of truth and the graph as a derived, rebuildable read-model (the measured requirement \u2014 join finding->remediation->retest and surface drift/freshness \u2014 is met by projecting the existing signed logs, so no new DB is justified; revisit only if cross-engagement high-cardinality coverage analytics later demand it). Preserve every gate: new nodes inherit the engagement_id scope-binding and reject a cross-tenant finding_ref; a planner/LLM still cannot promote; 'silent/nothing found' stays INDETERMINATE unless positive-control + liveness hold. A thin join index over <base_dir>/attestation-log + {slug}-{ref}.attestation.json keyed by finding_ref can back the projector without touching the authoritative stores."
+    },
+    {
+      "dimension": "coverage-graph-stores",
+      "stores": [
+        {
+          "name": "Blackboard event spine (CRUCIBLE source of truth)",
+          "path": "engine/crucible/framework/v2/agents/blackboard.py + agents/schema.sql; store at framework/v2/.blackboard/store.sqlite (tenant shard: .blackboard/tenants/<id>/)",
+          "model": "Append-only SQLite. events(id, engagement_id FK->bb_engagements.slug, kind, agent_name, posted_at, payload_json, parent_id, supersedes_id). kind CHECK enum = observation|hypothesis|plan|action|result|finding|critique|decision|reward|critic_verdict|reflection|refusal|tool_call|tool_result|agent_message. Hash-chained (agents/spine_chain.py) + governance-signed heads. This is the SINGLE SOURCE OF TRUTH every graph projects FROM; it already carries the OODA arc as typed events.",
+          "persistence": "SQLite WAL, append-only enforced by BEFORE UPDATE/DELETE triggers (RAISE FAIL); revision only via supersedes_id (both rows persist). Hash-chain + signed head verify OFFLINE (spine_verify). REFUSE-NEWER schema guard; opt-in integrity scan.",
+          "tenant_scoped": true
+        },
+        {
+          "name": "vigil_integration.graph (F4 attack-chain graph) + Neo4j live backend",
+          "path": "integration/vigil_integration/graph/{model,projector,query}.py; integration/vigil_integration/live/graph_neo4j.py; integration/vigil_integration/live/graph_driver.py",
+          "model": "DERIVED one-way read-model DAG over the signed spine. NodeLabel: AttackChain, ChainStep, ChainFinding, ChainFailure, ChainDecision + recon bridge CVE/Host/Port/Technology/Endpoint. EdgeType: HAS_STEP, NEXT_STEP, LED_TO, DECISION_PRECEDED, PRODUCED, FAILED_WITH, FOUND_ON, FINDING_RELATES_CVE, FINDING_AFFECTS_{ENDPOINT,PORT,TECH}. ConfirmationStatus CONFIRMED-vs-LEAD split. Provenance = spine_hash + signature_ref + evidence_ref(SCITT/OpenVEX) + engagement_id. Bi-temporal valid_from/invalid_from (spine seq). projector.project() is the ONLY writer. Neo4j labels = VigilNode + typed + Confirmed/Lead; 9 deterministic parameterized triage queries -> RemediationDraft.",
+          "persistence": "In-memory GraphView (pydantic, snapshot-serialisable, rebuilt byte-identically from spine) OR optional live Neo4j (rebuild_from_spine clears engagement partition then re-projects). Neo4j wired only if NEO4J_URI/USERNAME/PASSWORD present (honest omission + fail-closed otherwise).",
+          "tenant_scoped": true
+        },
+        {
+          "name": "worldmodel \u2014 World-Model Substrate (WMS): attack-path / reachability / coverage graph",
+          "path": "engine/crucible/framework/v2/worldmodel/ (models.py, graph.py, store.py, query.py, spine_projector.py, attack_paths.py, impact.py, pathsearch.py)",
+          "model": "Typed directed multigraph. 22 NodeKind: HOST, SERVICE, ENDPOINT, WEBAPP, DATASTORE, CLOUD_RESOURCE, NETWORK_SEGMENT, PRINCIPAL, CREDENTIAL, SESSION, CONTROL, FINDING + DOMAIN, CERTIFICATE, ASN, NETBLOCK, ORGANIZATION, IDENTITY, APPLICATION, PACKAGE, VULNERABILITY, INDICATOR. 24 EdgeKind: REACHABLE_FROM, TRUSTS_FOR, HAS_GRANT, MEMBER_OF, CAN_ASSUME, VALID_ON, AUTHENTICATES_TO, SESSION_ON, CONTROL_PROTECTS, EVIDENCES, OWNS, HOLDS, REACHED, RESOLVES_TO, PRESENTS_CERT, HOSTS, RUNS, DEPENDS_ON, AFFECTS, SAME_AS, CO_HOSTED_WITH, ... Every Node/Edge carries provenance(event id) + confidence[0,1] + Beta(alpha,beta) belief + grounding tier (grounded/intel/ungrounded/unclassified). Queries: find_paths, crown_jewel_paths; attack_paths (shortest/best path), impact (chokepoint rank, blast radius, what_if_remediate), pathsearch (lcb_weight).",
+          "persistence": "Deterministic diffable JSON snapshot via store.save/load (paths.secure_write, owner-only 0600) under target_dir(slug) (e.g. plan-input.json carries world doc). Projected one-way from spine via spine_projector.project_spine. Rebuildable; survives restart.",
+          "tenant_scoped": false
+        },
+        {
+          "name": "engine graph.store \u2014 generic spine->graph projection lens",
+          "path": "engine/crucible/framework/v2/graph/store.py",
+          "model": "Pure one-way projection of the spine into a thin event-graph: nodes for events + the agents that posted them; edges for parent / supersedes / posted. Partitioned (one per console session). Explicitly has NO promote/grant/tier/authorize method (a lens, never a source). Less rich than F4/WMS; event-provenance view only.",
+          "persistence": "EmbeddedGraphStore = JSON file-backed per partition (full rebuild, deterministic, no wallclock). Neo4jGraphStore is a documented SCAFFOLD stub behind the same interface.",
+          "tenant_scoped": false
+        },
+        {
+          "name": "MLS \u2014 Memory & Learning Substrate (+ intel entity-resolution / SCE)",
+          "path": "engine/crucible/framework/v2/memory/store.py + memory/schema.sql + memory/intel_schema.sql; store at framework/v2/.memory/store.sqlite (tenant shard: .memory/tenants/<id>/)",
+          "model": "Relational SQLite. engagements(slug, archetype, posture), findings(slug NNN-short-slug, severity CHECK, cvss_vector/base, bug_class, surface, summary, impact, embedding BLOB, discovered_at, FK engagement), hypotheses(H-NNN), archetype_priors(Beta priors \u2014 cross-session learning), outcomes. intel_schema adds the entity-resolution layer feeding WMS: intel_observations (subject/relation/object claim, polarity affirms/refutes, confidence+reliability, world-model node-id key), intel_entities (canonical asset/owner, bottleneck confidence), intel_entity_members, intel_merge_log (LLR bits), intel_source_yield.",
+          "persistence": "SQLite + float32 embedding BLOBs for semantic recall; durable ACROSS engagements (the one multi-engagement store). memory_agent bridges blackboard events -> MLS recorder.",
+          "tenant_scoped": true
+        },
+        {
+          "name": "Coverage model \u2014 signed coverage/completeness certificate + coverage-guided scheduler",
+          "path": "engine/crucible/framework/v2/verify/coverage_oracle.py; engine/crucible/framework/v2/scanner/coverage.py",
+          "model": "coverage_oracle: per-(surface,param,class) verdict finding | clean | inconclusive, where clean == an applicable oracle actually RAN and did NOT fire (inconclusive != clean). Denominator = REACHED surface (honest scope baked into signed bytes). scanner.coverage: response-behavior coverage metric driving a Thompson-sampling bandit to re-rank payload families (re-rank/defer, never gate-out; never promotes a FACT).",
+          "persistence": "Per-scan signed JSON certificate (schema vigil-coverage-certificate/1), m-of-n Ed25519 over canonical bytes, trust root pinned out-of-band, offline-verifiable. Not a committed baseline (per-scan artifact).",
+          "tenant_scoped": false
+        },
+        {
+          "name": "SIGIL Kuzu graph (SIBLING app \u2014 NOT the offense investigation graph; do NOT extend)",
+          "path": "apps/sigil/sigil/graph/ (rebuild.py, query.py)",
+          "model": "Kuzu embedded property graph rebuilt from SIGIL's OWN personal-assistant spine; every returned entity carries its spine anchor (seq+hash); read-only guarded Cypher passthrough powering graph.* MCP tools (writes refused).",
+          "persistence": "Kuzu embedded DB at sigil current/ dir, rebuilt from SIGIL spine.",
+          "tenant_scoped": false
+        }
+      ],
+      "entities_present": [
+        "assets: STRONG. WMS NodeKind HOST/SERVICE/ENDPOINT/WEBAPP/DATASTORE/CLOUD_RESOURCE/PRINCIPAL/CREDENTIAL/SESSION/CONTROL + OSINT DOMAIN/CERT/ASN/NETBLOCK/ORG/PACKAGE; F4 bridge CVE/Host/Port/Technology/Endpoint; MLS intel_entities (canonical asset/owner resolution).",
+        "goals: PARTIAL. Blackboard plan/hypothesis events + F4 AttackChain node (a chain implicitly targets a crown jewel) + WMS crown_jewel_paths target. NO first-class Goal/Objective node linking asset->goal->actions with a coverage denominator.",
+        "actions: STRONG. Blackboard action/tool_call events; F4 ChainStep (carries tool/tool_name); step is the unit PRODUCED/FAILED_WITH links hang off.",
+        "results: STRONG. Blackboard result/tool_result events; F4 ChainFinding + ChainFailure (PRODUCED / LED_TO / FAILED_WITH from the parent step).",
+        "leads: STRONG (first-class). F4 ConfirmationStatus.LEAD (physically distinct node state / distinct :Lead Neo4j label); WMS grounding=intel/ungrounded + VULNERABILITY node (a threat-intel lead, explicitly NOT a confirmed FINDING); blackboard hypothesis.",
+        "verification: PARTIAL \u2014 modeled as STATE, not a node. Confirmation = CONFIRMED + non-empty signed evidence_ref (SCITT/OpenVEX). Independent-verification EVENTS exist in the spine (critique/critic_verdict/reflection/refusal) and coverage_oracle verdicts, but there is no first-class Verification node on the action->result->verification->finding chain.",
+        "findings: STRONG. F4 ChainFinding:Confirmed; WMS FINDING node; MLS findings table (slug-keyed NNN); blackboard finding event. Authoritative FACT == oracle fired + signed evidence_ref (re-derived, never trusted from a field).",
+        "remediation: WEAK/GAP. Exists only as a DERIVED transient RemediationDraft (remediation/triage.py 9-query output) + codefix pipeline (strix_fix, live/codefix_runner, remediation/fix_oracle). impact.what_if_remediate ranks chokepoints. NOT persisted as a graph node linked finding->remediation.",
+        "retests: GAP. remediation/fix_oracle re-verifies a patch soundly (re-fires the SAME oracle over the patched build's re-captured bytes, signs a remediation cert only on genuine silence) and a conformance battery exists, but there is NO Retest node and no finding->remediation->retest link or retest-status (Verified Fixed / Partially / Bypassed / Risk Accepted / Will Not Fix) in any graph store."
+      ],
+      "links_present": [
+        "asset<->asset reach/trust (WMS): REACHABLE_FROM, TRUSTS_FOR, HAS_GRANT, MEMBER_OF, CAN_ASSUME, VALID_ON, AUTHENTICATES_TO, SESSION_ON, CONTROL_PROTECTS \u2014 the attack-path backbone pathsearch/impact traverse.",
+        "chain/action flow (F4): AttackChain-HAS_STEP->ChainStep, ChainStep-NEXT_STEP->ChainStep, ChainStep-PRODUCED/LED_TO->ChainFinding, ChainStep-FAILED_WITH->ChainFailure, ChainDecision-DECISION_PRECEDED->ChainStep.",
+        "finding->asset (F4 bridges + WMS): FOUND_ON, FINDING_AFFECTS_{ENDPOINT,PORT,TECH}, FINDING_RELATES_CVE; WMS EVIDENCES (FINDING->asset), AFFECTS (VULNERABILITY->PACKAGE/APPLICATION).",
+        "finding->evidence/verification (as ref): F4 Provenance.evidence_ref (present IFF CONFIRMED) + signature_ref; WMS grounding tier derived from provenance; coverage_oracle finding/clean verdict per surface.",
+        "event->event lineage (spine): parent_id (causal), supersedes_id (revision) \u2014 the native append-only lineage every projection reads.",
+        "asset->owner / entity resolution: WMS OWNS/ASSET_OWNS/SAME_AS/CO_HOSTED_WITH; MLS intel_merge_log (LLR-scored canonicalization).",
+        "MISSING links: goal->action (no goal node), action->verification->result (verification collapsed to a state), finding->remediation (remediation never persisted as a node), remediation->retest and retest->finding-status (no retest entity), goal/asset->coverage (coverage is a separate signed cert, not graph edges)."
+      ],
+      "safety_gates": [
+        "FACT-minting authority (preserve): CONFIRMED only when a record is an oracle-minted FACT carrying BOTH non-empty signed evidence_ref AND signature_ref \u2014 projector._is_confirmed, spine_projector._finding_confirmed, graph_neo4j :Confirmed label from GraphNode.is_confirmed, TriageFinding._confirmed_needs_evidence (type-level), may_remediate/spawn_remediation refuse a LEAD. A record merely claiming status=fact projects as a LEAD.",
+        "Planner never promotes its own claims: scanner.coverage CoverageGuidedScheduler and the engage.py posterior/Beta scoring RE-RANK/DEFER only \u2014 AttemptOutcome.produced_fact reflects the oracle gate and nothing else; the oracle is the sole FACT authority.",
+        "Projection-only single writer: graphs are one-way DERIVED read-models; projector.project (F4) / spine_projector.project_spine (WMS) / graph.store.project_from_spine are the ONLY writers; rebuild_from_spine CLEARS then re-projects so Neo4j == project() and cannot silently diverge. No promote/grant/tier method on the lens store.",
+        "CONFIRMED-vs-LEAD physical split: distinct node state and distinct Neo4j label (:Confirmed vs :Lead); query_prior_chains/PriorChainContext are frozen authoritative=False/retrieval_only=True; confirmed_findings() can only ever return CONFIRMED; a lead can never masquerade as a fact.",
+        "Grounded-only demotion: a CONFIRMED fact is retired/demoted ONLY by an oracle-grounded refutation (signed evidence+signature attesting re-execution FAILED); a bare refute retires only a LEAD and is resurrectable by a later oracle confirmation \u2014 an opinion cannot un-prove a proof.",
+        "'Nothing found is NEVER CLEAN without the checks': coverage_oracle clean requires an applicable oracle actually RAN and rendered a verdict; inconclusive != clean; honest denominator (reached surface, bounded by discovery caps) baked into signed bytes.",
+        "Tenant isolation (preserve): CRUCIBLE_TENANT shards .blackboard/.memory per-process (one tenant/process), fail-closed on unsafe id (no silent fallback that would commingle); Neo4j MERGE is ENGAGEMENT-SCOPED {id, engagement_id} so a foreign partition node (even a shared id like host:127.0.0.1) can never alias in or have its confirmation flipped; per-engagement clear only reaches its own nodes.",
+        "Evidence integrity/signing: hash-chained append-only spine + governance-signed heads (offline-verifiable); SCITT/OpenVEX evidence_ref; m-of-n Ed25519 signed coverage certs with out-of-band pinned trust root; fix_oracle signs a remediation cert only on genuine oracle silence over re-driven bytes.",
+        "No secrets in labels/logs/exports: graph_neo4j passes finding props through redact_tool_args + a strict _FINDING_PROP_KEYS allowlist (never dict(node.props)) + int64/scalar coercion; _RESERVED_PROP_KEYS stop a hostile prop overwriting confirmation/provenance; Neo4j password never logged/argv'd; WMS secure_write 0600.",
+        "Scope gate on bridges: a host/endpoint/port bridge is admitted only if EVERY client-independent host reading clears the injected scope_gate; an unextractable host fails closed; CVE/technology carry no host. Cypher is fully parameterized (only whitelisted enum labels/types interpolated)."
+      ],
+      "gaps": [
+        "duplicate-removed"
+      ],
+      "extend_not_rebuild": "EXTEND, do not add a new DB. Backbone = the append-only signed Blackboard event spine (source of truth) projected into the vigil_integration.graph F4 attack-chain graph + its live Neo4j backend (integration/vigil_integration/live/graph_neo4j.py) as the queryable investigation graph; use the WMS worldmodel (engine/crucible/framework/v2/worldmodel) as the complementary asset-topology/coverage subgraph it already is. Concretely: (1) add Goal, Remediation, Retest NodeLabels and edges (CHAIN_PURSUES_GOAL, FINDING_REMEDIATED_BY, REMEDIATION_RETESTED_BY, RETEST_STATUS) to the frozen model.py enums \u2014 the Neo4j binder picks them up automatically via its existing label/type whitelist; (2) add remediation/retest spine EVENT kinds to agents/schema.sql + agents/models.py so those entities enter the graph ONLY through the one-way projector (never a second writer), keeping FACT authority \u2014 a Remediation node should project CONFIRMED only from fix_oracle's signed remediation cert, exactly as a finding needs evidence_ref; (3) make Verification explicit by projecting the existing critic_verdict/evidence-ref state into a node on the action->result->verification->finding chain; (4) bridge F4<->WMS by shared, provenance-bound asset ids (reuse MLS intel_entities canonical ids) rather than a new identity derivation. This reuses every existing safety gate (CONFIRMED/LEAD split, projection-only single writer, oracle-signed confirmation, grounded-only demotion, engagement-scoped tenant MERGE, parameterized Cypher, secret redaction, bi-temporal never-delete) instead of re-earning them in a new store. A new graph DB is justified only if measured path-query scale on Neo4j proves inadequate; nothing found here warrants it.",
+      "notes": "Read-only audit under /home/kali/vigil (branch meridian-s5-expansion); no files edited, no tools run, no traffic, ARTEX never touched. The 'Bayesian graph (engage.py scoring)' the task names is NOT a separate store: it is scoring LAYERED over the graphs \u2014 engage.py CompetingResult per-finding posterior + credible interval (hypothesis vs benign alternatives, oracle stays authoritative), WMS per-node/edge Beta(alpha,beta) belief with belief_lcb (lower credible bound so thin evidence scores below a proven fact), worldmodel.impact chokepoint ranking / blast radius / what_if_remediate, and calibration/ledger.py OutcomeLedger + conformal calibration. Persistence quick map: spine + MLS = SQLite (tenant-sharded, durable); WMS = per-run deterministic JSON snapshot; F4 = in-memory GraphView rebuilt from spine, optional live Neo4j (honest-omission if unconfigured). Tenant model = one tenant per process (CRUCIBLE_TENANT shard, fail-closed) + engagement_id/group_id partition inside Neo4j + per-slug target dirs; there is no cross-tenant graph and the MERGE scoping actively prevents shared-id aliasing. Strongest existing guarantee to protect while extending: the graph is a pure one-way projection of a signed append-only spine with a physical CONFIRMED/LEAD split and oracle-sole FACT authority \u2014 the investigation graph's new segments (goals, remediation, retests, explicit verification) must enter the SAME way (new spine event kinds -> the one projector), never via a second writer, or the anti-trust-laundering property is lost. Keep any resulting gap matrix private to chat/~/.claude/plans (public repo)."
+    },
+    {
+      "dimension": "safety-authz-multitenancy",
+      "stores": [
+        {
+          "name": "MLS memory store (engagements/findings/hypotheses/payloads/dead_ends)",
+          "path": "engine/crucible/framework/v2/memory/store.py + memory/schema.sql",
+          "model": "SQLite (WAL, foreign_keys ON). Tables: engagements(slug UNIQUE,target_url,archetype,posture), findings(engagement_id FK,slug=NNN-slug,severity CHECK,cvss,bug_class,surface,summary,impact), hypotheses(handle H-NNN,status CHECK open/confirmed/refuted/surprised/deferred,refute_on,cheap_test), payloads(outcome CHECK success/failure/blocked/partial/unknown), dead_ends, archetype_priors, playbook_outcomes. Rows reference engagement by integer FK (ON DELETE CASCADE).",
+          "persistence": "Durable on-disk SQLite; migrations via memory/migrate.py (schema_meta version). Owner-only dir (0700) + 0600 DB (X2).",
+          "tenant_scoped": true
+        },
+        {
+          "name": "Intel/leads store (observations + resolved entities)",
+          "path": "engine/crucible/framework/v2/intel/store.py + memory/intel_schema.sql",
+          "model": "Repository over the SAME memory.Store sqlite. intel_observations(obs_id,engagement_slug,source_kind,subject/object node_id,relation,claim_key,polarity,confidence,reliability,seq) + intel_entities. Single writer = IntelIngest (policy); store is mechanism. Preserves full Observation JSON for exact round-trip.",
+          "persistence": "Durable sqlite, shares the tenant-sharded .memory DB; also tagged by engagement_slug column.",
+          "tenant_scoped": true
+        },
+        {
+          "name": "Blackboard append-only event spine",
+          "path": "engine/crucible/framework/v2/agents/blackboard.py + agents/schema.sql",
+          "model": "Append-only SQLite event log; SQL triggers REFUSE UPDATE/DELETE on events; Python API exposes only post()/supersede(). EventKind Literal = observation,hypothesis,plan,action,result,finding,critique,decision,reward,critic_verdict,reflection,refusal,tool_call,tool_result,agent_message. Doctrine baked in: tool_result is a provenance-labelled observation NOT a fact; agent_message is coordination-only never promotable; refusals are evidence.",
+          "persistence": "Durable sqlite at <root>/framework/v2/.blackboard/tenants/<tenant>/store.sqlite; single-writer-per-engagement; per-run it also persists spine-head.json + spine-chain.json (governance-signed, offline-verifiable).",
+          "tenant_scoped": true
+        },
+        {
+          "name": "WorldModel typed attack-graph (asset topology)",
+          "path": "engine/crucible/framework/v2/worldmodel/{graph,models,store,spine_projector}.py",
+          "model": "In-memory directed typed multigraph. 20+ NodeKind (HOST,SERVICE,ENDPOINT,WEBAPP,DATASTORE,CLOUD_RESOURCE,NETWORK_SEGMENT,PRINCIPAL,CREDENTIAL,SESSION,CONTROL,FINDING,DOMAIN,CERTIFICATE,ASN,NETBLOCK,ORGANIZATION,IDENTITY,APPLICATION,PACKAGE,VULNERABILITY,INDICATOR); ~25 EdgeKind (REACHABLE_FROM,EVIDENCES,RESOLVES_TO,HOSTS,RUNS,AFFECTS,...). Every node/edge carries provenance + confidence + Beta(alpha,beta) belief + a grounding tier from classify_provenance(). Upsert merges, confidence reconciles to max.",
+          "persistence": "JSON snapshot (worldmodel.store to_json, schema_version 1, deterministic) under the run dir (.console/runs/<run_id>, rebuilt from reverifiable.json); in-memory during a run. NOT written anywhere tenant-sharded.",
+          "tenant_scoped": false
+        },
+        {
+          "name": "Integration bi-temporal chain-DAG read-model (GraphView) + optional Neo4j mirror",
+          "path": "integration/vigil_integration/graph/{projector,model}.py + live/graph_neo4j.py",
+          "model": "Bi-temporal graph read-model. NodeLabel: AttackChain,ChainStep,ChainFinding,ChainFailure,ChainDecision,CVE,Host,Port,Technology,Endpoint. EdgeType: HAS_STEP,NEXT_STEP,LED_TO,PRODUCED,FAILED_WITH,FOUND_ON,FINDING_RELATES_CVE,FINDING_AFFECTS_ENDPOINT/PORT/TECH. ConfirmationStatus CONFIRMED(signed evidence_ref+signature_ref) vs LEAD. Refute sets invalid_from (never deletes).",
+          "persistence": "In-memory GraphView; optional LIVE Neo4j mirror. Mirror partitions ONLY by engagement_id/group_id (WHERE n.engagement_id=$engagement_id); rebuild_from_spine clears that engagement partition. No tenant_id on nodes.",
+          "tenant_scoped": false
+        },
+        {
+          "name": "Per-engagement findings + signed finding anchor",
+          "path": "targets/<slug>/findings/NNN-slug.md + integration .../inert_finding.py cert -> apps/sigil/.../inbound/finding_receiver.py",
+          "model": "Markdown finding files (template: PoC, impact, remediation) namespaced by SLUG; offense-finding-anchor1 = m-of-n OFFENSE_GOVERNANCE signature over a finding (owner-delegated per S4, owner-rooted via from_delegation->verify_delegation).",
+          "persistence": "Files on disk per slug; signed inert cert verifiable offline.",
+          "tenant_scoped": false
+        },
+        {
+          "name": "Evidence store + evidence certificates",
+          "path": "engine/crucible/framework/v2/common/paths.py evidence_dir(slug,action_id); verify/* oracles; coverage_oracle.py",
+          "model": "Raw .http exchanges (credential-masked via vigil_core.redact before at-rest), signed evidence certs (DOMAIN_TAG crucible-evidence-v1). evidence_ref + signature_ref are what make a finding CONFIRMED. Re-executable by OracleVerifier.confirm / reverify.",
+          "persistence": "Per-slug/action dir under root (gitignored originals); signed certs offline-verifiable.",
+          "tenant_scoped": false
+        },
+        {
+          "name": "Charter/authority store (scope + window + killswitch)",
+          "path": "packages/core/vigil_core/vigil_core/authority.py; paths.authority_path(slug), <slug>.halt",
+          "model": "Signed EngagementAuthority(scope list, window, destructive flag, OOB fields kept OUT of scope); SignedAuthority refuses on tampered scope/window/destructive. Per-request gate re-derives scope/window/killswitch at runtime.",
+          "persistence": "Signed document per slug on disk; <slug>.halt kill-switch file; authority_root for the trust root.",
+          "tenant_scoped": false
+        }
+      ],
+      "entities_present": [
+        "assets: STRONG \u2014 WorldModel NodeKinds (host/service/endpoint/webapp/datastore/cloud/principal/credential/session/control + recon: domain/cert/asn/netblock/org/identity/application/package), intel_entities/observations (MLS), integration Host/Port/Endpoint/Technology, engagements.target_url/archetype",
+        "goals: WEAK \u2014 only engagements row (posture TEST/AUDIT/EMULATE, business_context) + EngagementAuthority.scope + targets/<slug>/attack-tree.md (a markdown doc, not a queryable store). No first-class GOAL node/table/edge.",
+        "actions: PRESENT as events \u2014 blackboard EventKind 'action'/'plan'/'tool_call', MLS payloads table (payload_text,target_surface,outcome), offense-spine ExecRecords, integration ChainStep. Not a first-class node linked into the asset graph.",
+        "results: PRESENT as events \u2014 blackboard 'result'/'observation'/'tool_result', payloads.outcome, intel_observations(polarity,confidence,reliability), coverage_oracle probe_verdict (finding/clean/inconclusive).",
+        "leads: STRONG \u2014 MLS hypotheses(status,refute_on,cheap_test), VULNERABILITY/INDICATOR NodeKinds, GROUNDING_INTEL provenance tier, intel.promote endpoint:promoted LEAD, integration ConfirmationStatus.LEAD, blackboard 'hypothesis'.",
+        "verification: STRONGEST \u2014 verify.verifier.OracleVerifier.confirm (>=0.7, no oracle=no confirmation), verify/oracles, signed evidence certs, coverage_oracle signed cert, reverify.py, spine_projector verify=True re-execution choke point (TRUTHENOVATION T1), classify_provenance grounded tier, demoted marker.",
+        "findings: STRONG \u2014 MLS findings table (slug-keyed, severity/cvss/bug_class), FINDING NodeKind (grounded ONLY if oracle-signed), finding .md files, m-of-n offense-finding-anchor1, integration ChainFinding (CONFIRMED<=>signed).",
+        "remediation: EXTERNAL/WEAK \u2014 owner-tier routes /api/remediate/*/apply|verify|deepfix, PCR remediation-attestation domain tag, remediation/live_adapter.py. No remediation NODE and no finding->remediation EDGE in any graph.",
+        "retests: EXTERNAL/WEAK \u2014 reverify.py, /api/reverify/*, reports/retest.md, remediation /verify. No retest NODE, no remediation->retest or finding->retest temporal EDGE in any graph."
+      ],
+      "links_present": [
+        "finding -> asset: EVIDENCES edge (WorldModel); FOUND_ON / FINDING_AFFECTS_ENDPOINT|PORT|TECH (integration graph)",
+        "finding -> engagement: SQL FK findings.engagement_id (MLS, ON DELETE CASCADE); engagement_id/group_id on graph nodes",
+        "lead/action/dead_end -> engagement: SQL FK (hypotheses/payloads/dead_ends .engagement_id)",
+        "action -> result -> finding: ChainStep PRODUCED / FAILED_WITH / LED_TO / NEXT_STEP, HAS_STEP (integration graph); temporal ordering via blackboard seq + supersede",
+        "asset -> asset: reachability/trust/recon edges REACHABLE_FROM, RESOLVES_TO, HOSTS, RUNS, PRESENTS_CERT, ASSET_OWNS, DEPENDS_ON (WorldModel)",
+        "finding -> CVE lead: FINDING_RELATES_CVE; VULNERABILITY AFFECTS package/application (lead, SBOM oracle proves range)",
+        "verification -> finding: confirmation re-DERIVED from signed evidence_ref+signature_ref at projection time, not trusted (both projectors); verify=True re-executes retained proof for STORED projections",
+        "goal(scope) -> asset: intel.promote gates promoted endpoints to signed charter scope (in-scope by construction) \u2014 the nearest goal->asset link that exists"
+      ],
+      "safety_gates": [
+        "conjunctive_decide (vigil_core/gate.py): fail-closed conjunction \u2014 CRUCIBLE/domain authority in-envelope AND WARDEN tool outcome=='auto' AND (if destructive) owner-inclusive m-of-n threshold. First-failure-wins; ANY error in ANY conjunct = DENY (never caught-and-continued); strict `authorized is True` on destructive; unrecognised WARDEN outcome = DENY; missing destruction gate on destructive = DENY.",
+        "Never-liftable egress floor (gateway/vigil_gateway/denylist.is_egress_denied + integration live/egress_floor.pin_egress + common/egress_pin.resolve_and_pin): resolve-once, deny metadata/link-local(169.254.169.254)/multicast/reserved even if a charter LISTS them, scope-over-ADDRESSES (not just the name), then PIN the validated IP to close DNS-rebinding. Fail-closed on empty/unresolvable/denied/out-of-scope/missing-denylist.",
+        "RBAC (vigil_core/rbac.role_can + OFFENSE_ACTION_PERM): DEFAULT-DENY. viewer<analyst<operator<owner cumulative perms; unmapped route/perm/role => None => 403. Owner-only (offense_authority) for host-exec/infra-provision/patch-apply/authority-mint; emergency halt is LOWEST tier (halt is the safe direction), un-halt is owner.",
+        "Categorical protected-domain floor (vigil_core/hard_guardrail.is_hard_blocked): pure, env-free, pre-charter deny of gov/mil/edu/IGO (TLD regex + unicode-dot fold + exact IGO list). Fail-safe ON; owner toggle VIGIL_ALLOW_PROTECTED_DOMAINS only governs this pre-filter \u2014 signed charter scope and egress floor stay in force regardless. Applied again at intel.promote.",
+        "Tenant isolation (common/tenant + common/paths): ONE tenant per process (crucible_root lru_cache size 1); only .blackboard + .memory are tenant-sharded; targets/<slug>, evidence, authority, <slug>.halt are per-SLUG not per-tenant => ONE CRUCIBLE_ROOT PER TENANT REQUIRED. assert_tenant_fleet_isolated fails closed unless sharded AND root dedicated (atomic os.link TOFU .tenant-owner claim; malformed claim is hard-fail never 'unclaimed').",
+        "FACT-minting authority is the oracle seam ALONE (verify/verifier.OracleVerifier.confirm): no oracle => no confirmation; absent input => non-firing, never assumed pass; verifier chooses the whole discriminator from protocol constants keyed on bug_class (never producer-supplied) \u2014 closes the byte-identical-response fake-FACT. Planner/brain is propose-only (--plan-only, executes nothing); intel.promote writes a LEAD never a fact.",
+        "Anti-trust-laundering projection rule (worldmodel/spine_projector + integration/graph/projector): graph written ONLY by project() over signed spine records (single writer, no LLM/tool direct write); CONFIRMED finding node <=> record carries non-empty signed evidence_ref AND signature_ref; belief grounded never manufactured (0.9 default, never 1.0); grounded-only refutation (an unsigned opinion can't un-prove a proof); verify=True re-executes retained proof at the STORED-projection boundary and demotes a non-reproducing finding to an UNGROUNDED node.",
+        "Claim discipline (scanner/tests/test_claim_discipline.py over docs/CLAIM-DISCIPLINE.md): every evidence branch declares fact_capable and clean_capable as SEPARATE booleans + evidence + limitation; a response_body-derived branch is clean_capable=false outright (nothing-found over an undecodable body is INCONCLUSIVE never CLEAN); shipped capability matrix must not out-claim the branch registry; absolutes banned without an adjacent limitation.",
+        "Coverage honesty (verify/coverage_oracle.py): three verdicts finding / clean(oracle RAN and did not fire) / inconclusive(sent but NO oracle adjudicated \u2014 NOT clean); signed m-of-n cert over canonical bytes with out-of-band pinned root; scope statement baked into signed bytes = reached surface, NOT surface completeness.",
+        "At-rest redaction (vigil_core/redact scrub_log_event + redact_log_message): mask secret-keyed field VALUES and header/bearer/secret= values by KEY name before any log or at-rest sink; evidence .http hashed AFTER masking. Evidence signing uses domain-separated tags (crucible-evidence-v1, etc.) so a sig under one purpose cannot replay as another."
+      ],
+      "gaps": [
+        "GOALS are not a first-class entity: no GOAL node/table and no goal->action edge. The attack-tree lives as targets/<slug>/attack-tree.md (prose), the charter as EngagementAuthority.scope. The investigation graph needs a GOAL/objective node (projected from charter+attack-tree) and goal->action coverage edges, with scope still authoritative only via the signed authority, never the graph.",
+        "REMEDIATION and RETEST are entirely outside every graph: routes/PCR/reverify exist but there is no remediation or retest NODE and no finding->remediation->retest EDGE chain. This is the biggest missing slice of the target model (findings->remediation->retests). Must be added as signed, re-verifiable records (remediation-attestation domain tag already exists) \u2014 a retest node must be CONFIRMED only by an oracle RE-FIRE, mirroring the finding rule.",
+        "No lead->finding provenance edge: MLS hypotheses and findings share only engagement_id (FK), not a direct edge recording WHICH hypothesis a confirmed finding closed (or which dead_end refuted it). The chain assets->...->leads->verification->findings is broken at leads->findings. Add a hypothesis_id reference on finding (and dead_end) as a link, never as a promotion path.",
+        "No single evidence-linked graph spans all 9 entities: assets+findings live in WorldModel; actions+results+leads live as flat blackboard events and MLS rows; the integration GraphView models the chain DAG but only Chain*/Host/Port/Endpoint/CVE. The entities exist but across 4 disjoint stores with no unified, re-buildable projection. A coverage layer must be a NEW PROJECTION over the existing signed spine, not a 5th authoritative store.",
+        "Coverage is a per-scan detached certificate (coverage_oracle), not wired into the persistent graph: there are no coverage nodes/edges linking (surface,param,class,verdict) to assets/goals, so 'what was provably-tested-clean vs inconclusive vs untested' cannot be queried as graph coverage. Extend by projecting coverage_oracle verdicts as edges, preserving finding/clean/inconclusive AND the reached-surface-not-completeness scope.",
+        "TENANT COMMINGLING in the graph layer: neither WorldModel JSON snapshots (per run_dir under root) nor the integration Neo4j mirror are tenant-sharded. The Neo4j mirror partitions by engagement_id/group_id ONLY (no tenant_id on nodes), and engagement_id/slug is derived from the target \u2014 so two tenants in a shared root/shared Neo4j that scan the same target commingle exactly like targets/evidence/authority do. A new graph MUST either live under the per-tenant CRUCIBLE_ROOT or carry a tenant_id in every node key AND every query predicate; a shared Neo4j/Kuzu instance re-opens the hazard tenant.py warns about.",
+        "Cross-tenant / fabricated evidence-ID risk if the graph references bare evidence_ref strings: evidence_ref + signature_ref are per-slug and not tenant-qualified. A graph/coverage layer that renders a CONFIRMED edge from a stored evidence_ref MUST re-verify by re-execution (verify=True path already exists) and bind (tenant,slug,evidence_ref) \u2014 never trust a recorded 'confirmed' status or a bare ref, or a fabricated/cross-tenant ref could launder a fact.",
+        "Two owner ties still open (spine_domains): offense-usage-ledger and continuous-attestation-log are NOT owner-rooted. If a new graph/coverage layer signs or anchors its records, it must chain to the owner via an existing owner-rooted segment (offense-finding-anchor1 / offense-spine / crucible-blackboard-chain), not invent a new un-rooted signer."
+      ],
+      "extend_not_rebuild": "EXTEND two existing stores; do NOT stand up a new graph DB. (1) The durable record spine = the tenant-sharded MLS SQLite (engine/crucible/framework/v2/memory/schema.sql): add the missing entity tables/columns (goals, remediation, retests) and the missing LINK columns/tables (hypothesis_id on findings for lead->finding; finding_id on remediation; remediation_id + oracle-refire on retests), as a numbered migration (_migration_3) \u2014 it already holds engagements/findings/hypotheses/payloads/dead_ends, is tenant-sharded, FK-linked and owner-0600. (2) The typed investigation/coverage GRAPH = extend worldmodel.models (NodeKind/EdgeKind) + worldmodel.spine_projector with GOAL/ACTION/RESULT/REMEDIATION/RETEST/COVERAGE node+edge kinds, keeping it a PURE one-way projection over the signed blackboard spine (the append-only, UPDATE/DELETE-refused event log that already records observation/action/result/finding/refusal events). Reuse the integration bi-temporal pattern (invalid_from, never delete) for refute/retest retirement. Reasons a new DB is unjustified: the target model is already a typed provenance graph the WorldModel implements (classify_provenance, Beta belief, projection-only single writer, verify=True re-execution); a new shared Neo4j/Kuzu instance would REINTRODUCE the tenant-commingling the Neo4j mirror already has (engagement_id-only partition). Only recommend a dedicated graph DB if measured scale (campaign node/edge counts in docs/SCALE.md, currently ~100MB/process) exceeds the in-memory+JSON+SQLite envelope \u2014 and even then it must be instantiated per-tenant (one per CRUCIBLE_ROOT) or tenant_id-partitioned in every node key and query predicate.",
+      "notes": "WHAT A NEW GRAPH/COVERAGE LAYER MUST NOT WEAKEN (the exact invariants, each already enforced in code):\n\n1) FACT-minting stays with the oracle seam alone. The graph is a CONSUMER of facts, never a producer. A node/edge may be CONFIRMED only when the underlying spine record carries a non-empty signed evidence_ref AND signature_ref (spine_projector _finding_confirmed / integration _is_confirmed). A planner/brain/LLM write enters only as a LEAD (GROUNDING_INTEL/UNGROUNDED) \u2014 classify_provenance is the single arbiter and must not be bypassed by a new provenance prefix. Never let a coverage/graph node self-certify.\n\n2) \"Nothing found\" is NEVER CLEAN without the required checks. Preserve the three-verdict honesty (finding/clean/inconclusive): clean == an applicable oracle RAN and did not fire; a surface with no adjudicating oracle, or evidence that could not be decoded, is INCONCLUSIVE. A coverage graph must carry this verdict explicitly per (surface,param,class) and must repeat coverage_oracle's baked scope note (reached surface != surface completeness). Do not let a graph render absence-of-edge as proof-of-absence.\n\n3) Stored projections re-execute, never trust. Any node/edge built from a STORED report must go through the verify=True re-execution choke point (TRUTHENOVATION T1): a recorded-'confirmed' finding whose retained proof no longer re-fires grants NOTHING and is demoted to an UNGROUNDED node (the 'demoted:' marker). Grounded-only refutation holds \u2014 an unsigned opinion cannot un-prove a proof.\n\n4) Evidence integrity/signing + no fabricated/cross-tenant IDs. Bind every evidence reference to (tenant, slug, evidence_ref) and re-verify the signed bytes; reject a bare, fabricated, or cross-tenant evidence_ref. Keep domain-separated signing tags; chain any new signed graph record to an owner-rooted segment, not a new un-rooted signer.\n\n5) Tenant isolation. The graph must be scoped exactly like the spine: live under the per-tenant CRUCIBLE_ROOT (so assert_tenant_fleet_isolated covers it) OR carry tenant_id in every node key and every query predicate. The current Neo4j mirror's engagement_id-only partition is the cautionary example \u2014 do not copy it into a shared instance.\n\n6) Authorization gates untouched. The graph authorizes NOTHING (integration rule 6: \"the graph is inert\"). conjunctive_decide, RBAC default-deny, the never-liftable egress floor, and the m-of-n destruction quorum remain SEPARATE conjuncts; a graph edge/coverage claim must never become an input that relaxes a gate (e.g. \"the graph says in-scope\" must not substitute for the per-request scope+egress re-authorization).\n\n7) No secrets in any label/log/export. Run every graph label, node attr, and exported/rendered field through vigil_core.redact (mask by key-name) before it lands in a snapshot, log, or report \u2014 the WorldModel attrs bag and finding summaries can otherwise carry credential excerpts.\n\n8) Append-only / provenance discipline. Preserve the blackboard's UPDATE/DELETE-refusal and bi-temporal 'never delete, set invalid_from' for retirements, so the investigation graph stays a replayable, byte-deterministic projection auditable back to the signed spine.\n\nPRIVATE-MATRIX NOTE: this maps gaps in a PUBLIC repo; keep it in chat/~/.claude/plans. The design is independent (no ARTEX material consulted or referenced). Read-only audit \u2014 nothing was edited, written, or committed; no tools run against any target."
+    }
+  ],
+  "gap_matrix": {
+    "entity_coverage": [
+      {
+        "entity": "assets",
+        "exists": "Rich and first-class, but split across TWO disjoint stores. worldmodel Node (HOST/SERVICE/ENDPOINT/WEBAPP/DATASTORE/CLOUD_RESOURCE/NETWORK_SEGMENT/PRINCIPAL/CREDENTIAL/SESSION/CONTROL + intel DOMAIN/CERTIFICATE/ASN/NETBLOCK/ORGANIZATION/PACKAGE/VULNERABILITY/...) each carrying a Beta belief + classify_provenance grounding tier; F4 recon-bridge nodes (Host/Port/Technology/Endpoint/CVE).",
+        "store": "engine/.../worldmodel/models.py (NodeKind) + integration/.../graph/model.py (bridge NodeLabel)",
+        "gap": "No shared asset-identity key between the two graphs: worldmodel ids are caller-assigned, F4 bridge ids are natural keys (host:<v>), so the belief-graph asset and the chain-graph asset that are the SAME host cannot be joined. The F4 bridge is a thin 5-label recon subset of the full asset kind-set. No tenant_id on either node (only engagement scope), so an asset id is cross-tenant-ambiguous in a shared CRUCIBLE_ROOT."
+      },
+      {
+        "entity": "goals",
+        "exists": "PARTIAL / implicit only. A goal appears solely as an attack-path DESTINATION: a worldmodel crown-jewel node whose kind is in pathsearch objective_kinds, and PathCertificate.destination. There is no declared-objective node.",
+        "store": "engine/.../worldmodel/pathsearch.py (crown_jewel_paths/objective_kinds) + engine/.../evidence/models.py (PathCertificate.destination)",
+        "gap": "No first-class Goal/Objective ENTITY bound to a charter objective. 'Goal' is node-kind membership, not an auditable, declared engagement objective that actions, leads and findings can be mapped to. The charter.md objectives never become a graph node, so coverage cannot be measured against stated objectives."
+      },
+      {
+        "entity": "actions",
+        "exists": "First-class. Spine event kinds (blackboard BlackboardEventRow.kind) + F4 ChainStep projected with STEP_TARGETED/EXPLOITED/IDENTIFIED and a tool prop; the raw-evidence directory is keyed by action_id.",
+        "store": "engine/.../agents/blackboard.py (spine) + integration/.../graph/model.py (ChainStep) + evidence_dir targets/<slug>/evidence/<action_id>/",
+        "gap": "action_id is a per-agent counter (A-NNN) or a content hash poc-<sha256(check_id)>, NOT an unguessable capability and NOT tenant-stamped. A ChainStep has no direct Action->Asset edge (it only reaches assets via the finding it PRODUCED) and no Action->Goal edge, so 'which action pursued which objective/asset' is not queryable."
+      },
+      {
+        "entity": "results",
+        "exists": "First-class for positive/failure outcomes. F4 PRODUCED / FAILED_WITH edges, ChainFailure and ChainDecision nodes; the AUTHORITATIVE result is the signed oracle verdict (never the tool's word).",
+        "store": "integration/.../graph/model.py + projector.py (edges/failure/decision) + engine/.../evidence/certify.py (oracle verdict)",
+        "gap": "A benign/negative result ('tested, nothing found') is not represented as any node/edge, so the graph cannot distinguish 'not tested' from 'tested, no finding'. Result modeling is finding-biased; coverage of a surface that was probed cleanly is invisible."
+      },
+      {
+        "entity": "leads",
+        "exists": "First-class and strongly separated from facts. F4 ChainFinding with ConfirmationStatus.LEAD, agent Finding status=lead, worldmodel VULNERABILITY kind (threat-intel lead), confidence Evidence datum with Provenance.ref. Leads are physically unable to appear in confirmed_findings().",
+        "store": "integration/.../graph/model.py (lead_findings) + engine/.../worldmodel/models.py (VULNERABILITY)",
+        "gap": "A lead's link to its verification ATTEMPT is not tracked. A lead never-yet-verified and a lead tested-but-not-confirmed look identical unless a grounded refute retired it, so 'which leads still await verification' is not answerable."
+      },
+      {
+        "entity": "verification",
+        "exists": "First-class and the strongest part of the system. EvidenceCertificate + verify_certificate re-fires the oracle over RETAINED bytes; reverify_context requires provenance in {reproduced,live_redrive}; projector._is_confirmed re-derives CONFIRMED; RemediationCertificate re-fires for the negative proof.",
+        "store": "engine/.../evidence/certify.py + models.py + integration/.../graph/projector.py (_is_confirmed)",
+        "gap": "Verification is NOT dereferenced at the graph/query boundary. CONFIRMED derivation checks only that evidence_ref/signature_ref are NON-EMPTY; it never resolves+re-verifies the stored cert. There is NO evidence-by-ID resolver/index, so a dangling, mismatched, or cross-finding evidence_ref reads back as a FACT undetected. This is the central gap."
+      },
+      {
+        "entity": "findings",
+        "exists": "First-class across 4+ stores. EvidenceCertificate.finding_ref; F4 ChainFinding CONFIRMED (signed evidence_ref); worldmodel FINDING node + EVIDENCES edge; agent Finding type; human targets/<slug>/findings/NNN-*.md.",
+        "store": "engine/.../evidence/models.py + integration/.../graph/model.py + engine/.../worldmodel/models.py + targets/<slug>/findings/",
+        "gap": "Finding identity is non-uniform (finding_ref slug vs spine_hash vs cert_digest vs NNN-slug.md vs worldmodel node id) with no canonical finding-key join. evidence_ref is an opaque, non-uniform string (detection cert_id | spine hash | SCITT/OpenVEX id | sha256:<digest>). No tenant_id on the EvidenceCertificate (engagement_slug only)."
+      },
+      {
+        "entity": "remediation",
+        "exists": "PARTIAL \u2014 certificate only, OFF-GRAPH. RemediationCertificate (vigil-remediation-cert-v2): a NEGATIVE proof earned by oracle silence over the patched build, binding original_finding_cert_digest -> the signed POSITIVE finding cert. reprove.py re-proves.",
+        "store": "integration/.../remediation/remediation_cert.py + attestation.py",
+        "gap": "Remediation is a standalone signed JSON, NOT projected as a graph node/edge. The finding->remediation segment is invisible to the investigation graph; 'which confirmed findings have a remediation' cannot be answered by traversal, and nothing re-verifies the referenced finding cert at a graph boundary."
+      },
+      {
+        "entity": "retests",
+        "exists": "PARTIAL \u2014 signed ledger only, OFF-GRAPH. attestation_log.py VF-1b Continuous Attestation Log: a signed, hash-chained, anti-rollback monotonic series of 4-state prove-cert ticks (REMEDIATED/STILL_VULNERABLE/INCONCLUSIVE/REFUSED), each tick linked to its finding via the embedded remediation cert digest.",
+        "store": "integration/.../remediation/attestation_log.py + prove_driver.py",
+        "gap": "The retest ledger is rich but not projected as a first-class graph entity. The finding->remediation->retest lifecycle and its current status (Verified Fixed / Still Vulnerable / Inconclusive) is not queryable from the investigation/coverage graph; the retest.md status columns have to be assembled by hand from the ledger."
+      }
+    ],
+    "link_coverage": [
+      {
+        "link": "asset -> goal",
+        "exists": true,
+        "store": "worldmodel/pathsearch.py (source->crown-jewel routes) + evidence/models.py PathCertificate (destination + backing_cert_digests)",
+        "gap": "A route is computed on demand and a PathCertificate binds it to a DESTINATION, but there is no persistent Asset->Goal edge keyed on a DECLARED objective node (goals are not entities). So 'which assets reach objective X' is a transient query, not a stored, auditable coverage link."
+      },
+      {
+        "link": "goal -> action",
+        "exists": false,
+        "store": "(none)",
+        "gap": "No goal entity and no Goal->Action / Action->Goal edge. 'Which actions pursued objective X', and 'which objectives have zero actions', are unanswerable. This is the single biggest missing adjacency in the chain."
+      },
+      {
+        "link": "action -> result",
+        "exists": true,
+        "store": "integration/.../graph/model.py + projector.py (PRODUCED / FAILED_WITH, HAS_STEP / NEXT_STEP / LED_TO)",
+        "gap": "Only positive/failure results are edged. A benign/negative result has no edge, so action->result coverage is finding-biased and cannot show a surface that was probed cleanly."
+      },
+      {
+        "link": "result -> lead",
+        "exists": true,
+        "store": "integration/.../graph/model.py (a ChainFinding LEAD produced by a step)",
+        "gap": "Adequate. There is no explicit 'this later result supersedes/weakens that lead' beyond the refute mechanism, but the lead itself is well-represented."
+      },
+      {
+        "link": "lead -> verification",
+        "exists": true,
+        "store": "integration/.../graph/projector.py (_is_confirmed, monotone LEAD->CONFIRMED on the same node) + evidence cert",
+        "gap": "The link exists only as the successful upgrade. A verification ATTEMPT that did NOT confirm the lead is not recorded as an event linked to it (only a grounded refute retires it), and the evidence_ref is not dereferenced, so 'which leads have had a verification attempt' is not answerable."
+      },
+      {
+        "link": "verification -> finding",
+        "exists": true,
+        "store": "engine/.../evidence/models.py (EvidenceCertificate.finding_ref) + integration/.../graph/projector.py (stamps evidence_ref on the node)",
+        "gap": "Join by OPAQUE string, not a verified join. The graph never resolves evidence_ref -> SignedEvidence and re-checks finding_ref == the node's finding. A cert for finding A referenced on finding B's node, or a dangling ref, is undetected. No evidence-by-ID resolver exists."
+      },
+      {
+        "link": "finding -> remediation",
+        "exists": true,
+        "store": "integration/.../remediation/remediation_cert.py (RemediationCertificate.original_finding_cert_digest)",
+        "gap": "A one-way digest inside a standalone JSON, not a graph edge. Nothing validates at a graph boundary that the referenced finding cert exists/verifies, and you cannot traverse finding->remediation in the investigation graph."
+      },
+      {
+        "link": "remediation -> retest",
+        "exists": true,
+        "store": "integration/.../remediation/attestation_log.py (ticks embed + re-execute the remediation cert; chained + anti-rollback)",
+        "gap": "The retest series links to remediation (hence finding) by embedded cert digest, but as a separate signed ledger, not a graph edge. The lifecycle + current status is not queryable from the graph."
+      },
+      {
+        "link": "finding -> asset (cross-cut)",
+        "exists": true,
+        "store": "engine/.../worldmodel (EVIDENCES edge) + integration/.../graph/model.py (FINDING_AFFECTS_ENDPOINT/PORT/TECH, FINDING_RELATES_CVE, FOUND_ON)",
+        "gap": "Two disjoint representations (worldmodel EVIDENCES vs F4 bridge) with no shared asset key; the F4 bridge covers only 5 recon labels, not the full worldmodel asset kind-set, so a finding on a DATASTORE/PRINCIPAL/CLOUD_RESOURCE has no F4 asset link."
+      },
+      {
+        "link": "finding -> evidence cert (cross-cut)",
+        "exists": true,
+        "store": "integration/.../graph (Provenance.evidence_ref) \u2014 opaque, non-uniform",
+        "gap": "THE central integrity gap: evidence_ref is never dereferenced or re-verified at the graph/query boundary (only checked non-empty). 'Evidence-linked' integrity is ASSUMED from the signed spine, not enforced by a join, so a dangling/mismatched/cross-tenant ref passes."
+      },
+      {
+        "link": "attack-path -> findings (cross-cut)",
+        "exists": true,
+        "store": "engine/.../evidence/models.py (PathCertificate.backing_cert_digests) verified by verify_bundle",
+        "gap": "None material \u2014 this is the ONE link that IS join-verified (verify_bundle requires every backing cert present AND itself verified, fail-closed). It is the exact model the other links should copy."
+      }
+    ],
+    "slices": [
+      {
+        "slice": "S1 \u2014 Evidence-by-ID resolver + verify-store API (tenant-scoped, read-only index over existing certs)",
+        "pr_title": "feat(evidence): tenant-scoped evidence-by-id resolver behind VIGIL_EVIDENCE_RESOLVER (default off)",
+        "extends": "Evidence certificate layer \u2014 engine/crucible/framework/v2/evidence/ (certify.py + models.py); adds evidence/resolver.py within the existing package (no new store, indexes the PCF bundle + attestation chain already on disk)",
+        "flag": "VIGIL_EVIDENCE_RESOLVER",
+        "depends_on": "",
+        "additive_safe": true,
+        "acceptance_tests": [
+          "Flag OFF: no resolver is constructed and no evidence/certify API changes bytes \u2014 a golden PCF bundle (evidence-bundle.json + trust-root.json) serialises byte-identically to pre-slice.",
+          "Flag ON: resolve(cert_digest) returns the exact SignedEvidence whose certificate.cert_digest == cert_digest from the on-disk bundle.",
+          "Flag ON: a one-byte mutation of a stored cert changes its digest and the OLD id resolves to None \u2014 content-addressed, no stale alias.",
+          "Flag ON: resolve(unknown_id) returns None (never raises, never partial) \u2014 fail-closed on a dangling id.",
+          "Flag ON: resolve_and_verify(id, contexts) is ok only when the EXISTING verify_certificate re-fires the oracle and confirms over retained bytes; a tampered artifact (sha256 mismatch) yields not-ok.",
+          "Flag ON: resolver is TENANT-SCOPED \u2014 it indexes only crucible_root()'s evidence tree; an id that exists only under another tenant's root resolves to None (cross-tenant id rejected).",
+          "Flag ON: a well-shaped but backing-less id (e.g. sha256:deadbeef...) resolves to None; the resolver never fabricates a SignedEvidence.",
+          "Flag ON: a cert present but whose m-of-n Ed25519 signatures do not verify against the pinned trust root yields not-ok from resolve_and_verify (signature authority never relaxed).",
+          "Flag ON: the resolver is READ-ONLY \u2014 after N resolve/verify calls the evidence tree's file set and mtimes are unchanged.",
+          "Import hygiene + no-offense: importing evidence.resolver pulls only the evidence package + stdlib (no offense engine, no network); a symbol grep guard confirms no new tool/exec/egress is added."
+        ]
+      },
+      {
+        "slice": "S2 \u2014 JOIN-verified CONFIRMED at the graph/query boundary (demote-only)",
+        "pr_title": "feat(graph): dereference+re-verify evidence_ref before CONFIRMED behind VIGIL_GRAPH_EVIDENCE_JOIN (default off)",
+        "extends": "F4 investigation graph \u2014 integration/vigil_integration/graph/projector.py (_is_confirmed path) + query.py (confirmed_findings boundary)",
+        "flag": "VIGIL_GRAPH_EVIDENCE_JOIN",
+        "depends_on": "S1",
+        "additive_safe": true,
+        "acceptance_tests": [
+          "Flag OFF: project() + confirmed_findings() are byte-identical to pre-slice for a fixed spine fixture (the current non-empty evidence_ref check is used; golden GraphView snapshot matches).",
+          "Flag ON, happy path: a finding whose evidence_ref resolves (S1) to a cert that re-verifies AND whose finding_ref matches the node stays CONFIRMED \u2014 unchanged from OFF for a sound finding.",
+          "Flag ON, dangling ref: a status=fact record with a non-empty but UNRESOLVABLE evidence_ref is NOT CONFIRMED (degrades to LEAD/unresolved_evidence), where OFF it would have been CONFIRMED \u2014 the central gap is closed.",
+          "Flag ON, mismatched finding: a cert that resolves+verifies but whose finding_ref is finding A, referenced on finding B's node, does NOT confirm B.",
+          "Flag ON, cross-tenant/cross-engagement: a cert that resolves only under another tenant/engagement does not confirm the node.",
+          "Monotone-stricter property: for every fixture, the ON set of CONFIRMED findings is a SUBSET of the OFF set \u2014 the join can only DEMOTE, never promote.",
+          "Flag ON: a bare (unsigned) refute still cannot demote a join-confirmed fact; a grounded (signed) refute still retires it \u2014 the existing demotion rule is untouched.",
+          "Flag ON: leads remain in the separate leads field and never leak into confirmed_findings() \u2014 the anti-laundering query split is preserved.",
+          "Determinism: ON projection is a pure function of (spine records + resolver contents); identical inputs rebuild a byte-identical GraphView; no wallclock/RNG introduced.",
+          "No-offense + inert: ON changes only what the read-model surfaces \u2014 no traffic, no live oracle (re-execution is over retained bytes via the existing verify path); PriorChainContext stays authoritative=False."
+        ]
+      },
+      {
+        "slice": "S3 \u2014 Goal/Objective entity projected from the charter (inert read-model node)",
+        "pr_title": "feat(graph): project charter objectives as inert Goal nodes behind VIGIL_GRAPH_OBJECTIVES (default off)",
+        "extends": "F4 investigation graph \u2014 integration/vigil_integration/graph/model.py (NodeLabel.OBJECTIVE + REACHES/PURSUES EdgeTypes) + projector.py (a 'goal' record kind)",
+        "flag": "VIGIL_GRAPH_OBJECTIVES",
+        "depends_on": "",
+        "additive_safe": true,
+        "acceptance_tests": [
+          "Flag OFF: no goal/objective record kind is recognized and the projector ignores any goal record \u2014 GraphView byte-identical to pre-slice (unknown kind already fail-closed-ignored).",
+          "Flag ON: a 'goal' spine record (a declared charter objective) projects to one NodeLabel.OBJECTIVE node keyed on a stable objective id; re-projecting the same id MERGEs, never duplicates.",
+          "Flag ON: a worldmodel crown-jewel a PathCertificate reaches projects an Asset -[REACHES]-> Goal edge, inheriting the path's confirmation (a lead route is a lead edge).",
+          "Flag ON: an Action(ChainStep) -[PURSUES]-> Goal edge is created from the step's declared objective id; a step with no objective id creates NO such edge (no fabricated linkage).",
+          "A Goal node is INERT: it carries no evidence_ref and is never returned by confirmed_findings() \u2014 a Goal can never be queried as a FACT.",
+          "Flag ON: bi-temporal invalid_from retirement applies to Goal nodes/edges exactly like other nodes (a withdrawn objective retires, never deletes).",
+          "Flag ON: a Goal/edge bridging to a host still passes the existing scope_gate (_host_in_scope) \u2014 an out-of-scope host cannot enter under the Goal path.",
+          "Flag ON: Goal projection authorizes nothing \u2014 a read surfacing a Goal stays retrieval_only/non-authoritative.",
+          "Additive-for-others: turning the flag ON for a spine with NO goal records yields a GraphView byte-identical to OFF.",
+          "No secrets: a Goal node's props pass the existing F3 redactor before any export/label \u2014 charter free-text cannot leak a credential/host into a label."
+        ]
+      },
+      {
+        "slice": "S4 \u2014 Remediation + Retest projected as graph nodes/edges (read-model over the existing cert + ledger)",
+        "pr_title": "feat(graph): project finding->remediation->retest lifecycle behind VIGIL_GRAPH_LIFECYCLE (default off)",
+        "extends": "F4 projector \u2014 integration/vigil_integration/graph/projector.py + model.py (NodeLabel.REMEDIATION/RETEST + REMEDIATED_BY/RETESTED_BY), fed (read-only) from remediation/remediation_cert.py + remediation/attestation_log.py",
+        "flag": "VIGIL_GRAPH_LIFECYCLE",
+        "depends_on": "S1",
+        "additive_safe": true,
+        "acceptance_tests": [
+          "Flag OFF: no remediation/retest kind is projected; GraphView byte-identical to pre-slice.",
+          "Flag ON: a RemediationCertificate projects a REMEDIATION node + Finding -[REMEDIATED_BY]-> Remediation edge, linked by original_finding_cert_digest resolving (S1) to the finding cert; a remediation whose referenced finding cert is ABSENT/UNVERIFIED projects NO confirmed edge (fail-closed).",
+          "Flag ON: an attestation_log tick projects a RETEST node + Remediation -[RETESTED_BY]-> Retest edge; status comes from the signed 4-state verdict, re-verified via the resolver, never from an unsigned label.",
+          "Flag ON: a REMEDIATED tick whose embedded remediation cert does NOT re-verify (oracle still fires / bad signature) is projected as still_vulnerable/unverified, not Verified Fixed \u2014 negative-proof controls are re-checked, not trusted.",
+          "Flag ON: the attestation log's anti-rollback floor is honored \u2014 a truncated/rolled-back tick series cannot project a newer 'fixed' status than the highwater floor allows.",
+          "Inert: Remediation/Retest nodes are never FACT findings \u2014 confirmed_findings() excludes them; they cannot launder a 'fixed' into a new confirmed vulnerability or vice-versa.",
+          "Flag ON: Finding -[REMEDIATED_BY]-> Remediation -[RETESTED_BY]-> Retest is traversable in one query, and a finding with a remediation but NO retest is distinguishable from one with a passing retest.",
+          "Cross-tenant: a remediation/retest cert that resolves only under another tenant is rejected (not projected onto this engagement's finding).",
+          "Determinism: ON projection is a pure function of (spine + remediation certs + attestation ticks); byte-identical rebuild; no wallclock.",
+          "No-offense: projection issues no traffic and runs no live retest \u2014 it reads EXISTING signed certs/ticks; a symbol grep guard confirms no new exec/egress/tool."
+        ]
+      },
+      {
+        "slice": "S5 \u2014 Coverage view over the investigation graph (honesty-preserving, non-authoritative)",
+        "pr_title": "feat(graph): coverage rollup (goals/assets/findings/lifecycle) behind VIGIL_COVERAGE_VIEW (default off)",
+        "extends": "F4 graph query layer \u2014 integration/vigil_integration/graph/query.py (adds graph/coverage.py within the package)",
+        "flag": "VIGIL_COVERAGE_VIEW",
+        "depends_on": "S2,S3,S4",
+        "additive_safe": true,
+        "acceptance_tests": [
+          "Flag OFF: graph.query public API is byte-identical to pre-slice; no coverage function is exposed.",
+          "Flag ON: coverage(view) reports, per Goal, the count of Actions that PURSUE it and whether any confirmed Finding AFFECTS an asset that REACHES it; a Goal with zero actions is surfaced as uncovered.",
+          "Honesty invariant: an asset/surface with no finding is reported as not_tested UNLESS a benign/negative result record exists for it, in which case tested_no_finding \u2014 silence is NEVER reported as CLEAN/safe.",
+          "Flag ON: per confirmed Finding, coverage reports remediation present|absent and retest verified_fixed|still_vulnerable|inconclusive|none, derived only from JOIN-verified (S2/S4) nodes \u2014 an unverified remediation never shows as verified_fixed.",
+          "Flag ON: a LEAD finding is reported under leads_unverified and never under findings_confirmed (the lead/fact split carries into coverage).",
+          "Flag ON: coverage counts only ACTIVE (non-retired) nodes \u2014 a refuted lead drops from the unverified-leads count (bi-temporal honored).",
+          "Non-authoritative: the coverage result is stamped retrieval_only=True / authoritative=False \u2014 it grants nothing and authorizes no action.",
+          "Determinism: coverage(view) is a pure function of the view \u2014 same view yields byte-identical, sorted coverage JSON; no wallclock.",
+          "No secrets: every label/count in the coverage export passes the F3 redactor \u2014 no host/credential/token leaks into a coverage label.",
+          "Fail-closed honesty on sparse data: with an empty/partial graph, coverage never crashes and never reports 100%/CLEAN for an un-scanned goal \u2014 missing data reads as unknown/not_tested, never as covered."
+        ]
+      }
+    ],
+    "safety_preserved": [
+      "FACT-minting authority unchanged and only ever tightened: CONFIRMED is still RE-DERIVED from an oracle-signed, re-executing evidence cert (projector._is_confirmed + the S2 join), never from a producer/LLM/planner claim. The join can only DEMOTE \u2014 the ON set of confirmed findings is always a subset of OFF; no slice adds a promote/grant/tier path.",
+      "Planner/consumer cannot read authority from the graph: every read stays retrieval_only=True / authoritative=False and FROZEN (PriorChainContext); leads never leak into the confirmed set; Goal/Remediation/Retest nodes are inert and excluded from confirmed_findings().",
+      "'Nothing found' is never CLEAN: coverage distinguishes not_tested from tested_no_finding (needs a real benign/negative observation); refutation RETIRES bi-temporally (invalid_from), never deletes; a non-oracle-grounded refute can retire only a LEAD and stays resurrectable.",
+      "Evidence integrity/signing preserved and strengthened: every resolved cert is re-verified by the EXISTING re-execution path (m-of-n Ed25519 + trust-root fingerprint pin + artifact sha256 re-hash + chain / monotonic anti-rollback highwater); a dangling, mismatched, tampered, or cross-finding evidence_ref fails CLOSED and can no longer read back as a FACT.",
+      "Tenant isolation: every new node/edge/resolver is tenant+engagement-scoped; a cross-tenant or fabricated evidence ID is rejected at resolve (S1) and at the join (S2); the one-root-per-tenant requirement and assert_tenant_fleet_isolated are untouched; no cross-engagement cert reuse.",
+      "Additive / byte-identical OFF: every slice is default-OFF behind its own VIGIL_* flag and, with the flag off (and, for the pure-projection slices, even on for a spine carrying no new records), serialises byte-identically \u2014 no existing signature, cert digest, spine record, or golden snapshot changes.",
+      "Determinism + rebuildable: every projection remains a pure function of the signed spine (plus already-signed certs/ticks), ordered by spine seq, with no wallclock/RNG \u2014 the read-model stays independently rebuildable and verifiable, never a parallel source of truth.",
+      "No offensive capability added: every slice is read-model or verification-tightening only; none issues traffic, runs a live oracle/retest, or adds a tool/exec/egress symbol; all re-execution is over RETAINED bytes via the existing verify path (enforced by a per-PR symbol grep guard).",
+      "No secrets in labels/logs/exports: every new label/prop/coverage field passes the existing F3 redactor; private keys stay in process memory; no credential/host/token enters a graph label or coverage export."
+    ],
+    "recommend_new_graph_db": false,
+    "rationale": "Do NOT introduce a new graph database; extend the existing stores. All nine gaps are missing PROJECTIONS and JOINS over data that is already the single signed source of truth (the hash-chained, dual-Ed25519-signed event spine), not a missing storage engine. The F4 GraphView is already a deterministic, rebuildable read-model projected one-way from that spine by a single writer (graph/projector.py), and an optional real Neo4j binder already exists behind VIGIL_GRAPH_BACKEND=neo4j, written only by rebuild_from_spine. The target investigation+coverage graph is small (per-engagement: hundreds to low-thousands of nodes) and every query these slices need \u2014 1-3 hop lifecycle traversal (finding->remediation->retest), asset/goal coverage rollups, evidence-ref joins \u2014 is satisfied comfortably by the in-memory GraphView or the existing Neo4j projection. A new DB would be actively harmful here: it would create a SECOND source of truth (the exact trust-laundering risk the projector was built to prevent), add an unsigned write path outside the spine, and multiply the tenant-isolation surface (another store that would need the one-root-per-tenant guarantee). The sound architecture is to keep the spine as the only source of truth and add: (S1) an evidence-by-ID resolver that merely indexes certs already on disk; (S2) a join that dereferences+re-verifies evidence_ref before CONFIRMED (closing the central 'non-empty != verified' gap, demote-only so FACT authority can only tighten); (S3) a declared Goal/Objective node; (S4) projection of the existing RemediationCertificate + attestation_log ticks into finding->remediation->retest nodes/edges; and (S5) a non-authoritative coverage rollup. Each is one additive, default-OFF, byte-identical-when-off PR extending a named existing module (evidence/, graph/model.py, graph/projector.py, graph/query.py), expanding no offensive capability. A new DB should be reconsidered ONLY on a measured requirement that the in-memory view and Neo4j binder provably cannot meet \u2014 e.g. cross-engagement analytics over millions of nodes or sub-100ms multi-hop queries at that scale \u2014 none of which is present in this single-engagement, audit-first model. Note on the relayed 'build everything in parallel' intent: S1 and S3 have no dependencies and can be built concurrently; S2 and S4 each depend only on S1 (parallel to each other); S5 depends on S2+S3+S4 and lands last. This step itself is the READ-ONLY design deliverable \u2014 no files were written, ARTEX was not opened, and the matrix is intended to stay private (chat / ~/.claude/plans), never the public tree."
+  }
+}
